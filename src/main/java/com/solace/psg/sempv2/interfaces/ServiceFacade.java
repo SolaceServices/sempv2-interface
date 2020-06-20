@@ -121,7 +121,15 @@ public class ServiceFacade
 	
 	private String accountPassword;
 	
-
+	/**
+	 * Gets the current access token set for this Service Facade.
+	 * @return the token.
+	 */
+	public String getCurrentAccessToken()
+	{
+		return accessToken;
+	}
+	
 	/**
 	 * Gets Admin Token URL.
 	 * @return the tokenAdminUrl
