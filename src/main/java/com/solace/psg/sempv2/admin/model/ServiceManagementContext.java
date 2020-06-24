@@ -16,7 +16,30 @@ public class ServiceManagementContext
 	private String userUsername;
 	private String userPassword;
 	private String sempUrl;
+	private String sempV1Url;
 	private String smfUrl;
+	private String ssmfUrl;
+	
+	/**
+	 * The TCP protocol prefix for SMF.
+	 */
+	public static final String SMF_PREFIX = "tcp://";
+	
+	/**
+	 * The secure TCP protocol prefix for SMF.
+	 */
+	public static final String SECURE_SMF_PREFIX = "tcps://";
+	
+	
+	/**
+	 * Gets the Secure SMF String.
+	 * @return the ssmfUrl
+	 */
+	public String getSecureSmfUrl()
+	{
+		return ssmfUrl;
+	}
+
 	private String clusterPassword;
 	private String clusterName;
 	
@@ -145,7 +168,13 @@ public class ServiceManagementContext
 				for (EndPoint ep : mp.getEndPoints())
 				{
 					if (ep.getName().equalsIgnoreCase("SEMP Config"))
-							sempUrl = ep.getUris().get(0);
+					{
+							sempV1Url = sempUrl = ep.getUris().get(0);
+							if (sempUrl.endsWith("/v2/config"))
+							{
+								sempV1Url = sempUrl.substring(0, sempUrl.indexOf("/v2/config"));
+							}
+					}
 				}
 			}
 		}
@@ -160,7 +189,11 @@ public class ServiceManagementContext
 			{
 				if (ep.getName().equals("SMF"))
 				{
-					smfUrl = ep.getUris().get(0).replace("tcp://", "");
+					smfUrl = ep.getUris().get(0).replace(SMF_PREFIX, "");
+				}
+				else if (ep.getName().equals("Secured SMF"))
+				{
+					ssmfUrl = ep.getUris().get(0).replace(SECURE_SMF_PREFIX, "");
 				}
 			}
 		}
@@ -256,6 +289,14 @@ public class ServiceManagementContext
 		return sempUrl;
 	}
 
+	/**
+	 * @return the sempV1Url
+	 */
+	public String getSempV1Url()
+	{
+		return sempV1Url;
+	}
+	
 	/**
 	 * Sets the SEMP Url.
 	 * @param sempUrl the sempUrl to set

@@ -3,6 +3,8 @@ Project sempv2-interface is library project for SEMP V2 service configuration.
 
 The main  functionality is exposed via SEMP V2, which should be the primary API to be used to handle all the required tasks.  
 
+The currently generated code if based on schema version 9.4 (2.14). The latest version is 9.5 (2.15). 
+
 ### sempinterface 
 
 Sempinterface has all the classes needed to excute SEMP commmands against the PubSub+ Broker.

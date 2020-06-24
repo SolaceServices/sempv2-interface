@@ -767,17 +767,28 @@ public class PubSubCloudServiceApi
 	/**
 	 * Invites a new user.
 	 * 
-	 * @param accessToken
-	 * @param email
+	 * @param accessToken the token
+	 * @param email the email
 	 * @param roles List of String from type UserRoles
 	 * @throws ApiException 
 	 */
 	public User addUser(String accessToken, String email, List<String> roles) throws ApiException
+	{	
+		UserRequest request = new UserRequest(email, roles);
+		return addUser(accessToken, request);
+	}
+	
+	/**
+	 * Invites a new user.
+	 * 
+	 * @param accessToken the token
+	 * @param request the user request object
+	 * @throws ApiException 
+	 */
+	public User addUser(String accessToken, UserRequest request) throws ApiException
 	{
 		BearerTokenAuth auth = new BearerTokenAuth(accessToken);
 		apiClient.setAuthentication(auth);
-		
-		UserRequest request = new UserRequest(email, roles);
 		
 		Call call = getJsonCall("POST", "", request, auth);
 		Type returnType = new TypeToken<UserResponse>(){}.getType();

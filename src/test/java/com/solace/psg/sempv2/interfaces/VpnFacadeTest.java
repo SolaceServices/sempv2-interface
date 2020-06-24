@@ -58,7 +58,7 @@ public class VpnFacadeTest extends FacadeTestBase
 		vf = new VpnFacade(localService);
 	}
 
-	@Test
+	@Test @Ignore
 	public void testVpnContext()
 	{
 		ServiceDetails sd;
@@ -80,7 +80,7 @@ public class VpnFacadeTest extends FacadeTestBase
 		}
 	}
 
-	@Test
+	@Test @Ignore
 	public void testAclProfileOperations()
 	{
 		try
@@ -114,7 +114,7 @@ public class VpnFacadeTest extends FacadeTestBase
 		fail("Not yet implemented");
 	}
 
-	@Test //@Ignore
+	@Test @Ignore
 	public void testGetCreateDeleteBridgeWithSubscriptions()
 	{
 		List<Subscription> subscriptions = new ArrayList<Subscription>();

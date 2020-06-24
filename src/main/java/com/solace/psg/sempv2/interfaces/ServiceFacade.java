@@ -22,6 +22,10 @@ import com.solace.psg.sempv2.admin.model.ServiceDetailsResponse;
 import com.solace.psg.sempv2.admin.model.Service;
 import com.solace.psg.sempv2.admin.model.ServicesResponse;
 import com.solace.psg.sempv2.admin.model.User;
+import com.solace.psg.sempv2.admin.model.UserRequest;
+import com.solace.psg.sempv2.config.api.CertAuthorityApi;
+import com.solace.psg.sempv2.config.model.CertAuthoritiesResponse;
+import com.solace.psg.sempv2.config.model.CertAuthority;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.ClientConnectDefaultActionEnum;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.PublishTopicDefaultActionEnum;
@@ -331,6 +335,26 @@ public class ServiceFacade
 	}
 	
 	/**
+	 * Gets Service by ID.
+	 * @param serviceId
+	 * @return Service
+	 * @throws ApiException 
+	 */
+	public Service getServiceById(String serviceId) throws ApiException
+	{
+		Service result = null;
+		List<Service> services = getAllServices();
+		
+		for (Service service: services)
+		{
+			if (service.getServiceId().equals(serviceId))
+				result = service;
+		}
+		
+		return result;
+	}
+	
+	/**
 	 * Gets Service by name.
 	 * @param serviceName
 	 * @return ServiceDetails
@@ -413,7 +437,20 @@ public class ServiceFacade
 	}
 	
 	/**
-	 * Adds a new services to the cluster with a provided name.
+	 * Lists all CAs.
+	 * @param sercviceId
+	 * @return
+	 * @throws ApiException
+	 */
+	public List<CertAuthority> listCAs(String sercviceId)  throws ApiException
+	{
+		CertAuthorityApi api = new CertAuthorityApi();
+		CertAuthoritiesResponse response = api.getCertAuthorities(100, null, null, null);
+		return response.getData();
+	}
+	
+	/**
+	 * Creates a new service with a provided name.
 	 * 
 	 * URL: https://api.solace.cloud/api/v0/services
 	 * 
@@ -434,7 +471,30 @@ public class ServiceFacade
 		
 		return result;
 	}
-	
+
+	/**
+	 * Creates a new service with a provided name.
+	 * 
+	 * URL: https://api.solace.cloud/api/v0/services
+	 * 
+	 * @param serviceName
+	 * @return Service
+	 * @throws IOException 
+	 * @throws ApiException 
+	 * @throws InterruptedException 
+	 */
+	public Service createServiceAsync(String serviceName, String serviceTypeId, String serviceClassId, String datacenterId) throws ApiException, IOException, InterruptedException
+	{
+		Service result = null;
+		
+		apiHttpClient.setBasePath(serviceAdminUrl);
+
+		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		result = api.createServiceAsync(accessToken, serviceName, serviceTypeId, serviceClassId, datacenterId);		
+		
+		return result;
+	}
+
 	/**
 	 * Gets all users data.
 	 * @return List of Users
@@ -529,7 +589,7 @@ public class ServiceFacade
 	 * 
 	 * @param email
 	 * @param roles List of String from type UserRoles
-	 * @return User
+	 * @return User the suer object
 	 * @throws ApiException 
 	 */
 	public User addUser(String email, List<String> roles) throws ApiException
@@ -540,7 +600,23 @@ public class ServiceFacade
 		
 		return api.addUser(accessToken, email, roles);			
 	}
-	
+
+	/**
+	 * Invites a new user.
+	 * 
+	 * @param request the user request
+	 * @return User the user object
+	 * @throws ApiException 
+	 */
+	public User addUser(UserRequest request) throws ApiException
+	{
+		apiHttpClient.setBasePath(userAdminUrl);
+
+		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		
+		return api.addUser(accessToken, request);			
+	}
+
 	/**
 	 * Deletes a service by its service ID.
 	 * @param serviceId
@@ -665,4 +741,5 @@ public class ServiceFacade
 		
 		return result;
 	}
+	
 }

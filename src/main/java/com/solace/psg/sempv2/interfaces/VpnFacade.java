@@ -1,35 +1,53 @@
 package com.solace.psg.sempv2.interfaces;
 
+import java.lang.reflect.Type;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
-
+import com.google.gson.reflect.TypeToken;
+import com.solace.psg.sempv2.admin.model.ServiceCreateResponse;
 import com.solace.psg.sempv2.admin.model.ServiceDetails;
 import com.solace.psg.sempv2.admin.model.ServiceManagementContext;
 import com.solace.psg.sempv2.admin.model.Subscription;
 import com.solace.psg.sempv2.admin.model.SubscriptionDirection;
 import com.solace.psg.sempv2.admin.model.SubscriptionType;
+import com.solace.psg.sempv2.apiclient.ApiClient;
 import com.solace.psg.sempv2.apiclient.ApiException;
-
+import com.solace.psg.sempv2.apiclient.ApiResponse;
+import com.solace.psg.sempv2.apiclient.Pair;
+import com.solace.psg.sempv2.auth.Authentication;
+import com.solace.psg.sempv2.auth.BearerTokenAuth;
+import com.solace.psg.sempv2.auth.HttpBasicAuth;
+import com.solace.psg.sempv2.config.api.CertAuthorityApi;
 import com.solace.psg.sempv2.config.api.MsgVpnApi;
+import com.solace.psg.sempv2.config.model.CertAuthoritiesResponse;
+import com.solace.psg.sempv2.config.model.CertAuthority;
+import com.solace.psg.sempv2.config.model.CertAuthorityResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfileResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfilesResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnBridge;
 import com.solace.psg.sempv2.config.model.MsgVpnBridge.BridgeVirtualRouterEnum;
 import com.solace.psg.sempv2.config.model.MsgVpnBridge.RemoteAuthenticationSchemeEnum;
+import com.squareup.okhttp.Call;
 import com.solace.psg.sempv2.config.model.MsgVpnBridgeRemoteMsgVpn;
 import com.solace.psg.sempv2.config.model.MsgVpnBridgeRemoteMsgVpnResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnBridgeRemoteSubscription;
 import com.solace.psg.sempv2.config.model.MsgVpnBridgeRemoteSubscriptionResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnBridgeResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnBridgesResponse;
+import com.solace.psg.sempv2.config.model.MsgVpnClientProfile;
+import com.solace.psg.sempv2.config.model.MsgVpnClientProfileResponse;
+import com.solace.psg.sempv2.config.model.MsgVpnClientProfilesResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnDmrBridge;
 import com.solace.psg.sempv2.config.model.MsgVpnDmrBridgeResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnQueue;
 import com.solace.psg.sempv2.config.model.MsgVpnQueueResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnQueueSubscription;
 import com.solace.psg.sempv2.config.model.MsgVpnQueueSubscriptionResponse;
+import com.solace.psg.sempv2.config.model.MsgVpnQueuesResponse;
 import com.solace.psg.sempv2.config.model.SempMetaOnlyResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.ClientConnectDefaultActionEnum;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.PublishTopicDefaultActionEnum;
@@ -55,6 +73,8 @@ public class VpnFacade
 	 */
 	private ServiceManagementContext localContext;
 	
+	private String certAuthorities = "/certAuthorities";
+	
 	/**
 	 * Pattern of the bridge names. 
 	 */
@@ -74,6 +94,8 @@ public class VpnFacade
 	 * Count of bridges to be fetched. 
 	 */
 	private int defaultBridgeCount = 50;
+	
+	private int defaultQueueCount = 100;
 	
 	private long bridgeEgressWorkflowSize = 255L;
 	
@@ -199,6 +221,28 @@ public class VpnFacade
 	public List<MsgVpnAclProfile> getAclProfiles() throws ApiException
 	{
 		MsgVpnAclProfilesResponse response = api.getMsgVpnAclProfiles(localContext.getVpnName(), defaultAclCount, null, null, null);
+		return response.getData();
+	}
+
+	/**
+	 * Gets client profile for the VPN.
+	 * @return the profile data.
+	 * @throws ApiException
+	 */
+	public MsgVpnClientProfile getClientProfile(String clientProfileName) throws ApiException
+	{
+		MsgVpnClientProfileResponse response = api.getMsgVpnClientProfile(localContext.getVpnName(), clientProfileName, null);
+		return response.getData();
+	}
+
+	/**
+	 * List client profiles for the VPN.
+	 * @return TList of profiles.
+	 * @throws ApiException
+	 */
+	public List<MsgVpnClientProfile> listClientProfiles() throws ApiException
+	{
+		MsgVpnClientProfilesResponse response = api.getMsgVpnClientProfiles(localContext.getVpnName(), defaultAclCount,  null, null, null);
 		return response.getData();
 	}
 	
@@ -439,6 +483,16 @@ public class VpnFacade
 	{
 		return addQueue(context, queueRequest, false);
 	}
+	
+	/**
+	 * Gets queue details.
+	 * @param queueName the queue name.
+	 * @return 
+	 */
+	public MsgVpnQueue getQueue(String queueName) throws ApiException
+	{
+		return api.getMsgVpnQueue(localContext.getVpnName(), queueName, null).getData();
+	}
 
 	/**
 	 * Adds a bridge queue. 
@@ -462,6 +516,17 @@ public class VpnFacade
 		}
 		
 		return result;
+	}
+	
+	/**
+	 * Lists (the first (n) set by value) the queues of the localContext service.
+	 * @return the queue list
+	 * @throws ApiException
+	 */
+	public List<MsgVpnQueue> listQueues() throws ApiException
+	{
+		MsgVpnQueuesResponse response = api.getMsgVpnQueues(localContext.getVpnName(), defaultQueueCount, null, null, null);
+		return response.getData();
 	}
 	
 	/**
@@ -504,7 +569,69 @@ public class VpnFacade
 		return (response.getMeta().getResponseCode() == 200);
 	}
 	
+	/**
+	 * Lists all CAs.
+	 * @param sercviceId
+	 * @return
+	 * @throws ApiException
+	 */
+	public List<CertAuthority> listCAs(String sercviceId)  throws ApiException
+	{
+		//CertAuthorityApi api = new CertAuthorityApi();
+		
+		ApiClient apiClient = api.getApiClient();
+		
+		ApiResponse<CertAuthoritiesResponse> result = null;
+		
+		//BearerTokenAuth auth = new BearerTokenAuth(accessToken);
+		//apiClient.setAuthentication(auth);
 
+		Type returnType = new TypeToken<CertAuthoritiesResponse>(){}.getType();
+		Call call = getJsonCall(apiClient, "GET", certAuthorities, "", apiClient.getAuthentications().get(HttpBasicAuth.AUTH_TYPE));	
+
+		result = apiClient.execute(call, returnType);		
+
+		return result.getData().getData(); 
+	}
+	
+	/**
+	 * Creates a generic JSON call for ApiClient.
+	 * @param verb GET/POST, etc.
+	 * @param subPath "/subPath" or "" if no subpath
+	 * @param jsonRequest Object or null if no request
+	 * @param auth Object of interface Authentication
+	 * @return Call
+	 * @throws ApiException
+	 */
+	private Call getJsonCall(ApiClient apiClient, String verb, String subPath, Object jsonRequest, Authentication auth) throws ApiException
+	{
+		Object localVarPostBody = jsonRequest;
+
+		List<Pair> localVarQueryParams = new ArrayList<Pair>();
+		List<Pair> localVarCollectionQueryParams = new ArrayList<Pair>();
+
+		Map<String, String> localVarHeaderParams = new HashMap<String, String>();
+
+		Map<String, Object> localVarFormParams = new HashMap<String, Object>();
+
+		final String[] localVarAccepts =
+		{ "application/json" };
+		final String localVarAccept = apiClient.selectHeaderAccept(localVarAccepts);
+		if (localVarAccept != null)
+			localVarHeaderParams.put("Accept", localVarAccept);
+
+		final String[] localVarContentTypes =
+		{ "application/json" };
+		final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
+		localVarHeaderParams.put("Content-Type", localVarContentType);
+
+		String[] localVarAuthNames = new String[]
+		{ auth.getAuthType() };
+		return apiClient.buildCall(subPath, verb, localVarQueryParams, localVarCollectionQueryParams, localVarPostBody,
+				localVarHeaderParams, localVarFormParams, localVarAuthNames, null);		
+	}
+	
+	
 	/**
 	 * Deletes a bidirectional bridge to a remote service.
 	 * @param remoteService
