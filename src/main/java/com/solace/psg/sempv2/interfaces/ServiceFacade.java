@@ -437,19 +437,6 @@ public class ServiceFacade
 	}
 	
 	/**
-	 * Lists all CAs.
-	 * @param sercviceId
-	 * @return
-	 * @throws ApiException
-	 */
-	public List<CertAuthority> listCAs(String sercviceId)  throws ApiException
-	{
-		CertAuthorityApi api = new CertAuthorityApi();
-		CertAuthoritiesResponse response = api.getCertAuthorities(100, null, null, null);
-		return response.getData();
-	}
-	
-	/**
 	 * Creates a new service with a provided name.
 	 * 
 	 * URL: https://api.solace.cloud/api/v0/services

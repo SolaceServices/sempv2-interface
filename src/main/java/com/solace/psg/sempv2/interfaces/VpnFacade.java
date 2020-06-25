@@ -7,7 +7,6 @@ import java.util.List;
 import java.util.Map;
 
 import com.google.gson.reflect.TypeToken;
-import com.solace.psg.sempv2.admin.model.ServiceCreateResponse;
 import com.solace.psg.sempv2.admin.model.ServiceDetails;
 import com.solace.psg.sempv2.admin.model.ServiceManagementContext;
 import com.solace.psg.sempv2.admin.model.Subscription;
@@ -18,13 +17,13 @@ import com.solace.psg.sempv2.apiclient.ApiException;
 import com.solace.psg.sempv2.apiclient.ApiResponse;
 import com.solace.psg.sempv2.apiclient.Pair;
 import com.solace.psg.sempv2.auth.Authentication;
-import com.solace.psg.sempv2.auth.BearerTokenAuth;
+
 import com.solace.psg.sempv2.auth.HttpBasicAuth;
-import com.solace.psg.sempv2.config.api.CertAuthorityApi;
+
 import com.solace.psg.sempv2.config.api.MsgVpnApi;
 import com.solace.psg.sempv2.config.model.CertAuthoritiesResponse;
 import com.solace.psg.sempv2.config.model.CertAuthority;
-import com.solace.psg.sempv2.config.model.CertAuthorityResponse;
+
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfileResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfilesResponse;
@@ -51,7 +50,7 @@ import com.solace.psg.sempv2.config.model.MsgVpnQueuesResponse;
 import com.solace.psg.sempv2.config.model.SempMetaOnlyResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.ClientConnectDefaultActionEnum;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.PublishTopicDefaultActionEnum;
-import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.SubscribeShareNameDefaultActionEnum;
+
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.SubscribeTopicDefaultActionEnum;
 
 /**
@@ -572,26 +571,12 @@ public class VpnFacade
 	/**
 	 * Lists all CAs.
 	 * @param sercviceId
-	 * @return
+	 * @return List of CAs
 	 * @throws ApiException
 	 */
-	public List<CertAuthority> listCAs(String sercviceId)  throws ApiException
+	public List<String> listCAs()  throws ApiException
 	{
-		//CertAuthorityApi api = new CertAuthorityApi();
-		
-		ApiClient apiClient = api.getApiClient();
-		
-		ApiResponse<CertAuthoritiesResponse> result = null;
-		
-		//BearerTokenAuth auth = new BearerTokenAuth(accessToken);
-		//apiClient.setAuthentication(auth);
-
-		Type returnType = new TypeToken<CertAuthoritiesResponse>(){}.getType();
-		Call call = getJsonCall(apiClient, "GET", certAuthorities, "", apiClient.getAuthentications().get(HttpBasicAuth.AUTH_TYPE));	
-
-		result = apiClient.execute(call, returnType);		
-
-		return result.getData().getData(); 
+		return localService.getCertificateAuthorities();
 	}
 	
 	/**

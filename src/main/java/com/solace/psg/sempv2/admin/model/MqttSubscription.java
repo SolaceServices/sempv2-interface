@@ -16,5 +16,15 @@ public class MqttSubscription extends Subscription
 	{
 		this.name = name;
 	}
-
+	
+	/**
+	 * Initialises a new instance of the class.
+	 */
+	public MqttSubscription(String name, SubscriptionDirection direction, SubscriptionType subscriptionType)
+	{
+		this.name = name;
+		type = "SMF";
+		this.subscriptionType = subscriptionType;
+		this.direction = direction;
+	}
 }
