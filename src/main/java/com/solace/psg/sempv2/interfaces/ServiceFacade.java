@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-import com.solace.psg.sempv2.admin.PubSubCloudServiceApi;
+import com.solace.psg.sempv2.admin.PubSubCloudConsoleApi;
 import com.solace.psg.sempv2.apiclient.ApiClient;
 import com.solace.psg.sempv2.apiclient.ApiException;
 import com.solace.psg.sempv2.apiclient.ApiResponse;
@@ -34,7 +34,7 @@ import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.SubscribeTopicDefault
 import com.solace.psg.sempv2.config.model.MsgVpnClientProfile;
 
 /**
- * Class to handle all required Service operations by SBB.
+ * Class to handle various service operations.
  *  
  * @author VictorTsonkov
  *
@@ -288,7 +288,7 @@ public class ServiceFacade
 		
 		apiHttpClient.setBasePath(serviceAdminUrl);
 		
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		result = api.getAllServices(accessToken);		
 		
 		return result.getData();
@@ -308,7 +308,7 @@ public class ServiceFacade
 		ServiceDetails result = null;
 		apiHttpClient.setBasePath(serviceAdminUrl);
 		
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		result = api.getServiceDetails(accessToken, serviceId).getData();		
 		
 		return result;
@@ -389,7 +389,7 @@ public class ServiceFacade
 	{
 		boolean result = false;
 		apiHttpClient.setBasePath(serviceAdminUrl);
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		result = api.addCertificateAuthoritySync(accessToken, serviceId, caName, caContent);
 
 		return result;
@@ -412,7 +412,7 @@ public class ServiceFacade
 	{
 		boolean result = false;
 		apiHttpClient.setBasePath(serviceAdminUrl);
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		result = api.updateServiceAuthenticationSync(accessToken, serviceId, basicEnabled, clientCertEnabled, validateCertDate);
 
 		return result;
@@ -430,7 +430,7 @@ public class ServiceFacade
 	{
 		boolean result = false;
 		apiHttpClient.setBasePath(serviceAdminUrl);
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		result = api.deleteCertificateAuthoritySync(accessToken, serviceId, caName);
 
 		return result;
@@ -453,7 +453,7 @@ public class ServiceFacade
 		
 		apiHttpClient.setBasePath(serviceAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		result = api.createServiceSync(accessToken, serviceName, serviceTypeId, serviceClassId, datacenterId);		
 		
 		return result;
@@ -476,7 +476,7 @@ public class ServiceFacade
 		
 		apiHttpClient.setBasePath(serviceAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		result = api.createServiceAsync(accessToken, serviceName, serviceTypeId, serviceClassId, datacenterId);		
 		
 		return result;
@@ -491,7 +491,7 @@ public class ServiceFacade
 	{
 		apiHttpClient.setBasePath(userAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		
 		return api.getAllUsers(accessToken);			
 	}
@@ -507,7 +507,7 @@ public class ServiceFacade
 
 		apiHttpClient.setBasePath(userAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 
 		List<User> users = api.getAllUsers(accessToken);	
 		for (User user : users)
@@ -528,7 +528,7 @@ public class ServiceFacade
 	{
 		apiHttpClient.setBasePath(dcAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		
 		return api.getDataCenters(accessToken);			
 	}
@@ -542,7 +542,7 @@ public class ServiceFacade
 	{		
 		apiHttpClient.setBasePath(userAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		
 		return api.getUser(accessToken, userId);			
 	}
@@ -567,7 +567,7 @@ public class ServiceFacade
 	{		
 		apiHttpClient.setBasePath(userAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		return api.deleteUser(accessToken, userId);
 	}
 
@@ -583,7 +583,7 @@ public class ServiceFacade
 	{
 		apiHttpClient.setBasePath(userAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		
 		return api.addUser(accessToken, email, roles);			
 	}
@@ -599,7 +599,7 @@ public class ServiceFacade
 	{
 		apiHttpClient.setBasePath(userAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		
 		return api.addUser(accessToken, request);			
 	}
@@ -615,7 +615,7 @@ public class ServiceFacade
 	{
 		apiHttpClient.setBasePath(serviceAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		return api.deleteService(accessToken, serviceId);
 	}
 	
@@ -628,7 +628,7 @@ public class ServiceFacade
 	{
 		apiHttpClient.setBasePath(roleAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		
 		return api.getAllOrganizationRoles(accessToken);	
 	}
@@ -644,7 +644,7 @@ public class ServiceFacade
 	{
 		apiHttpClient.setBasePath(userAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		
 		return api.addRoleToUser(accessToken, userId, roles);	
 	}
@@ -666,7 +666,7 @@ public class ServiceFacade
 		
 		apiHttpClient.setBasePath(tokenAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		result = api.getToken(accountUsername, accountPassword);		
 		
 		return result;
@@ -704,7 +704,7 @@ public class ServiceFacade
 		
 		apiHttpClient.setBasePath(serviceAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		
 		return api.deleteClientProfileSync(accessToken, serviceId, profile);	
 	}
@@ -723,7 +723,7 @@ public class ServiceFacade
 		boolean result = false;
 		apiHttpClient.setBasePath(serviceAdminUrl);
 
-		PubSubCloudServiceApi api = new PubSubCloudServiceApi(apiHttpClient); 
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
 		result = api.addClientProfileSync(accessToken, serviceId, profile, defaultClientProfileAwait);	
 		
 		return result;

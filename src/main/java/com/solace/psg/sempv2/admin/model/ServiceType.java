@@ -5,7 +5,6 @@ package com.solace.psg.sempv2.admin.model;
 
 /**
  * Enumerated service types
- * @author VictorTsonkov
  *
  */
 public class ServiceType

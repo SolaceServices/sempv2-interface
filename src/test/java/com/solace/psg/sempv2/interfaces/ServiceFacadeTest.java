@@ -11,7 +11,7 @@ import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import com.solace.psg.sempv2.FacadeTestBase;
+import com.solace.psg.sempv2.CommonTestBase;
 import com.solace.psg.sempv2.admin.model.DataCenter;
 import com.solace.psg.sempv2.admin.model.Service;
 import com.solace.psg.sempv2.admin.model.ServiceDetails;
@@ -20,7 +20,7 @@ import com.solace.psg.sempv2.admin.model.UserRoles;
 import com.solace.psg.sempv2.apiclient.ApiException;
 import com.solace.psg.sempv2.interfaces.ServiceFacade;
 
-public class ServiceFacadeTest extends FacadeTestBase
+public class ServiceFacadeTest extends CommonTestBase
 {
 	private ServiceFacade sf;
 	

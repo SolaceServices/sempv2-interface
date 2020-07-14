@@ -5,7 +5,6 @@ package com.solace.psg.sempv2.admin.model;
 
 /**
  * Class to represent a subscription.
- * @author VictorTsonkov
  *
  */
 public abstract class Subscription

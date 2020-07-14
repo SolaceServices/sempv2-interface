@@ -4,9 +4,7 @@
 package com.solace.psg.sempv2.admin.model;
 
 /**
- * Enumerates service classes.
- * @author VictorTsonkov
- *
+ * Enumeration service class.
  */
 public class ServiceClass
 {

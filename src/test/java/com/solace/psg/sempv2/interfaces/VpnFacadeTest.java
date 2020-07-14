@@ -10,8 +10,7 @@ import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import com.solace.psg.sempv2.FacadeTestBase;
-import com.solace.psg.sempv2.admin.model.Service;
+import com.solace.psg.sempv2.CommonTestBase;
 import com.solace.psg.sempv2.admin.model.ServiceDetails;
 import com.solace.psg.sempv2.admin.model.ServiceManagementContext;
 import com.solace.psg.sempv2.admin.model.SmfSubscription;
@@ -25,7 +24,7 @@ import com.solace.psg.sempv2.config.model.MsgVpnQueue;
 import com.solace.psg.sempv2.interfaces.ServiceFacade;
 import com.solace.psg.sempv2.interfaces.VpnFacade;
 
-public class VpnFacadeTest extends FacadeTestBase
+public class VpnFacadeTest extends CommonTestBase
 {
 
 	private ServiceFacade sf;

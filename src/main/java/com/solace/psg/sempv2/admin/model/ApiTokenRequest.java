@@ -11,7 +11,6 @@ import io.swagger.annotations.ApiModelProperty;
 
 /**
  * API token request model
- * @author VictorTsonkov
  *
  */
 @javax.annotation.Resource

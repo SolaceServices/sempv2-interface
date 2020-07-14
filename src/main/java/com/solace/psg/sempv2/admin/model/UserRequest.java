@@ -7,11 +7,6 @@ import java.util.List;
 
 import com.google.gson.annotations.Expose;
 
-/**
- * A User Request class to invite a user with a list of roles.
- * @author VictorTsonkov
- *
- */
 public class UserRequest
 {
 	@Expose

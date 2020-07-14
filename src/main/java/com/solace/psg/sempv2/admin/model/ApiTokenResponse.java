@@ -11,8 +11,6 @@ import io.swagger.annotations.ApiModelProperty;
 
 /**
  * Class to encapsulate ApiToken Response.
- * 
- * @author VictorTsonkov
  *
  */
 @javax.annotation.Resource

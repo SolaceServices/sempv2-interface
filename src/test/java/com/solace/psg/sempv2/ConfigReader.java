@@ -1,7 +1,7 @@
 /**
  * 
  */
-package com.solace.psg.sempv2.interfaces;
+package com.solace.psg.sempv2;
 
 import java.io.File;
 import java.io.FileInputStream;
@@ -12,11 +12,7 @@ import java.util.Properties;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 
-/**
- * Class to handle various test properties
- * @author VictorTsonkov
- *
- */
+
 public class ConfigReader
 {
 	private static final Logger logger = LogManager.getLogger(ConfigReader.class);

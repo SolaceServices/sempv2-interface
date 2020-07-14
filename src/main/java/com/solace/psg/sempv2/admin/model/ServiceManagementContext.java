@@ -3,11 +3,7 @@
  */
 package com.solace.psg.sempv2.admin.model;
 
-/**
- * Class to return a small set of subelements required for management of most tasks.
- * @author VictorTsonkov
- *
- */
+
 public class ServiceManagementContext
 {
 	private ServiceDetails service;

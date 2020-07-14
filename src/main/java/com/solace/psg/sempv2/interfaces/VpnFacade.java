@@ -1,12 +1,12 @@
 package com.solace.psg.sempv2.interfaces;
 
-import java.lang.reflect.Type;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import com.google.gson.reflect.TypeToken;
+
 import com.solace.psg.sempv2.admin.model.ServiceDetails;
 import com.solace.psg.sempv2.admin.model.ServiceManagementContext;
 import com.solace.psg.sempv2.admin.model.Subscription;
@@ -14,15 +14,14 @@ import com.solace.psg.sempv2.admin.model.SubscriptionDirection;
 import com.solace.psg.sempv2.admin.model.SubscriptionType;
 import com.solace.psg.sempv2.apiclient.ApiClient;
 import com.solace.psg.sempv2.apiclient.ApiException;
-import com.solace.psg.sempv2.apiclient.ApiResponse;
+
 import com.solace.psg.sempv2.apiclient.Pair;
 import com.solace.psg.sempv2.auth.Authentication;
 
-import com.solace.psg.sempv2.auth.HttpBasicAuth;
+
 
 import com.solace.psg.sempv2.config.api.MsgVpnApi;
-import com.solace.psg.sempv2.config.model.CertAuthoritiesResponse;
-import com.solace.psg.sempv2.config.model.CertAuthority;
+
 
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfileResponse;
@@ -54,10 +53,7 @@ import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.PublishTopicDefaultAc
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.SubscribeTopicDefaultActionEnum;
 
 /**
- * Class to handle all bridge related operations for an SBB VPNs like bridges,
- * Profiles, etc.
- * 
- * @author VictorTsonkov
+ * Class to handle various VPN operations.
  *
  */
 public class VpnFacade
@@ -68,11 +64,11 @@ public class VpnFacade
 	private ServiceDetails localService;
 	
 	/**
-	 * Management context of the local vpn.
+	 * Management context of the local VPN.
 	 */
 	private ServiceManagementContext localContext;
 	
-	private String certAuthorities = "/certAuthorities";
+	//private String certAuthorities = "/certAuthorities";
 	
 	/**
 	 * Pattern of the bridge names. 
@@ -87,7 +83,7 @@ public class VpnFacade
 	/**
 	 * Number of ACLs to be returned with get.
 	 */
-	private int defaultAclCount = 20;
+	private int defaultAclCount = 30;
 	
 	/**
 	 * Count of bridges to be fetched. 
@@ -301,6 +297,10 @@ public class VpnFacade
 	{
 		boolean result = false;
 		ServiceManagementContext remoteContext = new ServiceManagementContext(remoteService);
+		
+		if (localContext.getSmfUrl() == null || localContext.getSmfUrl() == null)
+			throw new IllegalArgumentException("SMF URL is null. Bridge cannot be created. Enable SMF or create a TLS bridge.");
+		
 		String queueName = getBridgeQueueName(remoteContext.getVpnName());
 		
 		// Split subscriptions
@@ -348,7 +348,12 @@ public class VpnFacade
 		if (!createLocalBridge(localContext, request))
 			return false;
 		
-		if (!createRemoteVpn(localContext, remoteContext.getSmfUrl(), remoteContext.getVpnName(), bridgeName, queueName))
+		// This a workaround bit to make the bridge created but not work. In this case the bridge should be created with TLS.
+		String smfUrl = remoteContext.getSmfUrl();
+		/*if (smfUrl == null)
+			smfUrl = remoteContext.getSecureSmfUrl();*/
+		
+		if (!createRemoteVpn(localContext, smfUrl, remoteContext.getVpnName(), bridgeName, queueName))
 			return false;
 				
 		if (localDirectSubscriptions != null)

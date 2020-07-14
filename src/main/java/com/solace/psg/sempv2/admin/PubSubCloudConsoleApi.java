@@ -55,17 +55,17 @@ import com.squareup.okhttp.Response;
 
 
 /**
- * Service API for Solace PubSub Cloud.
+ * Service API for Solace PubSub Cloud console.
  * 
  * @author VictorTsonkov
  *
  */
-public class PubSubCloudServiceApi
+public class PubSubCloudConsoleApi
 {
-	private int defaultServiceTimeout = 2000;
-	private int defaultServiceRetry = 500; // waiting for around 16 mins
+	private int defaultServiceTimeout = 3000;
+	private int defaultServiceRetry = 600; // waiting for around 16 mins
 	
-	private int defaultCertRetry = 60;
+	private int defaultCertRetry = 90;
 	
 	private String certAuthorityPath = "/requests/serviceCertificateAuthorityRequests";
 	
@@ -83,7 +83,7 @@ public class PubSubCloudServiceApi
 	/**
 	 * Initialises a new instance of the class.
 	 */
-	public PubSubCloudServiceApi()
+	public PubSubCloudConsoleApi()
 	{
 		this(Configuration.getDefaultApiClient());
 	}
@@ -91,7 +91,7 @@ public class PubSubCloudServiceApi
 	/**
 	 * Initialises a new instance of the class.
 	 */
-	public PubSubCloudServiceApi(ApiClient apiClient)
+	public PubSubCloudConsoleApi(ApiClient apiClient)
 	{
 		this.apiClient = apiClient;
 	}
@@ -147,7 +147,7 @@ public class PubSubCloudServiceApi
 	}
 	
 	/**
-	 * Adds a new service to the cluster with a provided name and waits until state changes from Pending to running.
+	 * Creates a new service..
 	 * @param token
 	 * @param serviceName
 	 * @return

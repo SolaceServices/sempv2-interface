@@ -5,7 +5,6 @@ package com.solace.psg.sempv2.admin.model;
 
 /**
  * Class to represent User role types
- * @author VictorTsonkov
  *
  */
 public class UserRoles

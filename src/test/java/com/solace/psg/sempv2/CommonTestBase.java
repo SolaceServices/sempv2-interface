@@ -14,14 +14,13 @@ import org.junit.Before;
 
 import com.solace.psg.sempv2.admin.model.ServiceClass;
 import com.solace.psg.sempv2.admin.model.ServiceType;
-import com.solace.psg.sempv2.interfaces.ConfigReader;
 
 /**
  * Class to hold common test data.
  * @author VictorTsonkov
  *
  */
-public abstract class FacadeTestBase
+public abstract class CommonTestBase
 {
 
 	protected String user;
@@ -43,7 +42,7 @@ public abstract class FacadeTestBase
 	 * @throws IOException 
 	 * 
 	 */
-	public FacadeTestBase() 
+	public CommonTestBase() 
 	{
 		user = System.getProperty("user");
 		pass = System.getProperty("pass");

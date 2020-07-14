@@ -2,11 +2,6 @@ package com.solace.psg.sempv2.admin.model;
 
 import com.google.gson.annotations.Expose;
 
-/**
- * Class to encapsulate JSON request for Service create 
- * @author VictorTsonkov
- *
- */
 public class ServiceCreateRequest
 {
     @Expose

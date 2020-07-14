@@ -7,8 +7,6 @@ import com.google.gson.annotations.Expose;
 
 /**
  * Class to handle Client Profile request payload.
- * 
- * @author VictorTsonkov
  *
  */
 public class ClientProfileAsyncRequest
