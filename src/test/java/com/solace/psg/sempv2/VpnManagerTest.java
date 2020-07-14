@@ -1,4 +1,4 @@
-package com.solace.psg.sempv2.interfaces;
+package com.solace.psg.sempv2;
 
 import static org.junit.Assert.*;
 
@@ -10,7 +10,6 @@ import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import com.solace.psg.sempv2.CommonTestBase;
 import com.solace.psg.sempv2.admin.model.ServiceDetails;
 import com.solace.psg.sempv2.admin.model.ServiceManagementContext;
 import com.solace.psg.sempv2.admin.model.SmfSubscription;
@@ -21,14 +20,14 @@ import com.solace.psg.sempv2.apiclient.ApiException;
 import com.solace.psg.sempv2.config.model.MsgVpnAclProfile;
 import com.solace.psg.sempv2.config.model.MsgVpnBridge;
 import com.solace.psg.sempv2.config.model.MsgVpnQueue;
-import com.solace.psg.sempv2.interfaces.ServiceFacade;
-import com.solace.psg.sempv2.interfaces.VpnFacade;
+import com.solace.psg.sempv2.ServiceManager;
+import com.solace.psg.sempv2.VpnManager;
 
-public class VpnFacadeTest extends CommonTestBase
+public class VpnManagerTest extends CommonTestBase
 {
 
-	private ServiceFacade sf;
-	private VpnFacade vf;
+	private ServiceManager sm;
+	private VpnManager vm;
 	
 	private ServiceDetails localService;
 	private ServiceDetails remoteService;
@@ -43,18 +42,18 @@ public class VpnFacadeTest extends CommonTestBase
 	{
 		if (accessToken != null && accessToken.length() > 1)
 		{
-			sf = new ServiceFacade(accessToken);
+			sm = new ServiceManager(accessToken);
 		}
 		else if (user != null && pass != null)
 		{
-			sf = new ServiceFacade(user, pass);
+			sm = new ServiceManager(user, pass);
 		}
 		else
 			fail("Credentials not provided. Set user and pass, or accessToken parameter.");
 		
-		localService = sf.getServiceDetails(localServiceId);
-		remoteService = sf.getServiceDetailsByName(testServiceName);
-		vf = new VpnFacade(localService);
+		localService = sm.getServiceDetails(localServiceId);
+		remoteService = sm.getServiceDetailsByName(testServiceName);
+		vm = new VpnManager(localService);
 	}
 
 	@Test @Ignore
@@ -63,12 +62,12 @@ public class VpnFacadeTest extends CommonTestBase
 		ServiceDetails sd;
 		try
 		{
-			ServiceManagementContext oldContext = vf.getDefaultVpnContext();
+			ServiceManagementContext oldContext = vm.getDefaultVpnContext();
 			assertNotNull(oldContext);
 	
 			ServiceManagementContext newContext = new ServiceManagementContext(remoteService);			
-			vf.setVpnContext(newContext);
-			ServiceManagementContext newContext2 = vf.getDefaultVpnContext();
+			vm.setVpnContext(newContext);
+			ServiceManagementContext newContext2 = vm.getDefaultVpnContext();
 			assertNotNull(newContext2);
 			assertEquals(oldContext, newContext2);
 
@@ -84,20 +83,20 @@ public class VpnFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			List<MsgVpnAclProfile> profiles = vf.getAclProfiles();
+			List<MsgVpnAclProfile> profiles = vm.getAclProfiles();
 			assertNotNull(profiles);
 			int size = profiles.size();
 
-			MsgVpnAclProfile response = vf.addAclProfile("testProfileName2", "allow", "allow", "disallow");
+			MsgVpnAclProfile response = vm.addAclProfile("testProfileName2", "allow", "allow", "disallow");
 			assertNotNull(response);
 			
-			profiles = vf.getAclProfiles();
+			profiles = vm.getAclProfiles();
 			int newSize = profiles.size();
 			assertEquals(size+1, newSize);
 			
 			assertEquals(response.getAclProfileName(), "testProfileName2");
 			
-			boolean result = vf.deleteAclProfile("testProfileName2");
+			boolean result = vm.deleteAclProfile("testProfileName2");
 			assertTrue(result);		
 		}
 		catch (ApiException e)
@@ -132,17 +131,17 @@ public class VpnFacadeTest extends CommonTestBase
 		
 		try
 		{
-			List<MsgVpnBridge> bridges = vf.getBridges();
+			List<MsgVpnBridge> bridges = vm.getBridges();
 			assertNotNull(bridges);
 			int size = bridges.size();
-			boolean result = vf.createBridge(remoteService, subscriptions);
+			boolean result = vm.createBridge(remoteService, subscriptions);
 			assertTrue(result);	
 			
-			bridges = vf.getBridges();
+			bridges = vm.getBridges();
 			int newSize = bridges.size();
 			assertEquals(size+1, newSize);			
 			
-			result = vf.deleteBridge(remoteService);
+			result = vm.deleteBridge(remoteService);
 			assertTrue(result);				
 		}
 		catch (ApiException e)
@@ -158,10 +157,10 @@ public class VpnFacadeTest extends CommonTestBase
 		{
 			MsgVpnQueue request = new MsgVpnQueue();
 			request.setQueueName("testQueueName2");
-			boolean result = vf.addQueue(request);
+			boolean result = vm.addQueue(request);
 			assertNotNull(result);
 			
-			result = vf.deleteQueue("testQueueName2");
+			result = vm.deleteQueue("testQueueName2");
 			assertNotNull(result);
 			
 		}

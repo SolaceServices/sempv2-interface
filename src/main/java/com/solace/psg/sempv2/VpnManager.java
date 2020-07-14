@@ -1,4 +1,4 @@
-package com.solace.psg.sempv2.interfaces;
+package com.solace.psg.sempv2;
 
 
 import java.util.ArrayList;
@@ -56,7 +56,7 @@ import com.solace.psg.sempv2.config.model.MsgVpnAclProfile.SubscribeTopicDefault
  * Class to handle various VPN operations.
  *
  */
-public class VpnFacade
+public class VpnManager
 {
 	/**
 	 * The details of the Service VPN.
@@ -110,7 +110,7 @@ public class VpnFacade
 	/**
 	 * Initialises a new instance of the class.
 	 */
-	public VpnFacade(ServiceDetails service)
+	public VpnManager(ServiceDetails service)
 	{
 		api = new MsgVpnApi();
 		this.localService = service;
@@ -120,7 +120,7 @@ public class VpnFacade
 	}
 	
 	/**
-	 * Sets the Client API to the facade's VPN context.
+	 * Sets the Client API to the VPN context.
 	 */
 	public void setDefaultVpnContext()
 	{
@@ -128,7 +128,7 @@ public class VpnFacade
 	}
 	
 	/*
-	 * Gets the Client API to the facade's VPN context.
+	 * Gets the Client API to the VPN context.
 	 */
 	public ServiceManagementContext getDefaultVpnContext()
 	{

@@ -1,7 +1,7 @@
 /**
  * 
  */
-package com.solace.psg.sempv2.interfaces;
+package com.solace.psg.sempv2;
 
 import java.io.IOException;
 import java.util.ArrayList;
@@ -39,7 +39,7 @@ import com.solace.psg.sempv2.config.model.MsgVpnClientProfile;
  * @author VictorTsonkov
  *
  */
-public class ServiceFacade
+public class ServiceManager
 {
 	private int connectTimeout = 60000;
 	
@@ -198,18 +198,18 @@ public class ServiceFacade
 	}
 
 	/**
-	 * Initialises a new ServiceFacade with a given list of cluster services.  
+	 * Initialises a new class with a given list of cluster services.  
 	 */
-	public ServiceFacade(List<ServiceDetails> clusterServiceList)
+	public ServiceManager(List<ServiceDetails> clusterServiceList)
 	{
 		init();
 	}
 	
 	/**
-	 * Initialises a new ServiceFacade with a given list of cluster services.  
+	 * Initialises a new class with a given list of cluster services.  
 	 * @throws ApiException 
 	 */
-	public ServiceFacade(String clusterAccessToken) throws ApiException
+	public ServiceManager(String clusterAccessToken) throws ApiException
 	{
 		if (clusterAccessToken == null)
 			throw new NullPointerException("Parameter clusterAccessToken cannot be null.");
@@ -220,23 +220,23 @@ public class ServiceFacade
 	}
 	
 	/**
-	 * Initialises a new ServiceFacade with a given list of cluster services.  
+	 * Initialises a new class with a given list of cluster services.  
 	 * @param accountUsername
 	 * @param accountPassword
 	 * @throws IOException 
 	 * @throws ApiException 
 	 */
-	public ServiceFacade(String accountUsername, String accountPassword) throws ApiException, IOException
+	public ServiceManager(String accountUsername, String accountPassword) throws ApiException, IOException
 	{
 		this(accountUsername, accountPassword, true);
 	}
 	
 	/**
-	 * Initialises a new ServiceFacade with a given list of cluster services.  
+	 * Initialises a new class with a given list of cluster services.  
 	 * @throws IOException 
 	 * @throws ApiException 
 	 */
-	public ServiceFacade(String accountUsername, String accountPassword, boolean obtainAccessToken) throws ApiException, IOException
+	public ServiceManager(String accountUsername, String accountPassword, boolean obtainAccessToken) throws ApiException, IOException
 	{
 		if (accountUsername == null)
 			throw new NullPointerException("Parameter accountUsername cannot be null.");

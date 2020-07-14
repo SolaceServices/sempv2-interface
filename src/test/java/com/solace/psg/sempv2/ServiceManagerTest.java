@@ -1,4 +1,4 @@
-package com.solace.psg.sempv2.interfaces;
+package com.solace.psg.sempv2;
 
 import static org.junit.Assert.*;
 
@@ -11,18 +11,17 @@ import org.junit.BeforeClass;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import com.solace.psg.sempv2.CommonTestBase;
 import com.solace.psg.sempv2.admin.model.DataCenter;
 import com.solace.psg.sempv2.admin.model.Service;
 import com.solace.psg.sempv2.admin.model.ServiceDetails;
 import com.solace.psg.sempv2.admin.model.User;
 import com.solace.psg.sempv2.admin.model.UserRoles;
 import com.solace.psg.sempv2.apiclient.ApiException;
-import com.solace.psg.sempv2.interfaces.ServiceFacade;
+import com.solace.psg.sempv2.ServiceManager;
 
-public class ServiceFacadeTest extends CommonTestBase
+public class ServiceManagerTest extends CommonTestBase
 {
-	private ServiceFacade sf;
+	private ServiceManager sm;
 	
 	@BeforeClass
 	public static void setUpBeforeClass() throws Exception
@@ -34,11 +33,11 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		if (accessToken != null && accessToken.length() > 1)
 		{
-			sf = new ServiceFacade(accessToken);
+			sm = new ServiceManager(accessToken);
 		}
 		else if (user != null && pass != null)
 		{
-			sf = new ServiceFacade(user, pass);
+			sm = new ServiceManager(user, pass);
 		}
 		else
 			fail("Credentials not provided. Set user and pass, or accessToken parameter.");
@@ -48,53 +47,53 @@ public class ServiceFacadeTest extends CommonTestBase
 	@Test
 	public void testGetSetConnectTimeout()
 	{
-		int value = sf.getConnectTimeout();
-		sf.setConnectTimeout(value+1);
-		assertEquals(value+1, sf.getConnectTimeout());
+		int value = sm.getConnectTimeout();
+		sm.setConnectTimeout(value+1);
+		assertEquals(value+1, sm.getConnectTimeout());
 	}
 
 	@Test
 	public void testGetSetReadTimeout()
 	{
-		int value = sf.getReadTimeout();
-		sf.setReadTimeout(value+1);
-		assertEquals(value+1, sf.getReadTimeout());
+		int value = sm.getReadTimeout();
+		sm.setReadTimeout(value+1);
+		assertEquals(value+1, sm.getReadTimeout());
 	}
 
 	@Test
 	public void testGetSetBaseServiceAdminUrl()
 	{
-		String value = sf.getBaseServiceAdminUrl();
-		sf.setBaseServiceAdminUrl("Changed");
-		assertEquals("Changed", sf.getBaseServiceAdminUrl());
-		sf.setBaseServiceAdminUrl(value);
+		String value = sm.getBaseServiceAdminUrl();
+		sm.setBaseServiceAdminUrl("Changed");
+		assertEquals("Changed", sm.getBaseServiceAdminUrl());
+		sm.setBaseServiceAdminUrl(value);
 	}
 
 	@Test @Ignore
 	public void testGetSetTokenAdminUrl()
 	{
-		String value = sf.getTokenAdminUrl();
-		sf.setTokenAdminUrl("Changed");
-		assertEquals("Changed", sf.getTokenAdminUrl());
-		sf.setTokenAdminUrl(value);	
+		String value = sm.getTokenAdminUrl();
+		sm.setTokenAdminUrl("Changed");
+		assertEquals("Changed", sm.getTokenAdminUrl());
+		sm.setTokenAdminUrl(value);	
 	}
 
 	@Test
 	public void testGetSetUserAdminUrl()
 	{
-		String value = sf.getUserAdminUrl();
-		sf.setUserAdminUrl("Changed");
-		assertEquals("Changed", sf.getUserAdminUrl());
-		sf.setUserAdminUrl(value);	
+		String value = sm.getUserAdminUrl();
+		sm.setUserAdminUrl("Changed");
+		assertEquals("Changed", sm.getUserAdminUrl());
+		sm.setUserAdminUrl(value);	
 	}
 
 	@Test
 	public void testGetSetServiceAdminUrl()
 	{
-		String value = sf.getServiceAdminUrl();
-		sf.setServiceAdminUrl("Changed");
-		assertEquals("Changed", sf.getServiceAdminUrl());
-		sf.setServiceAdminUrl(value);	
+		String value = sm.getServiceAdminUrl();
+		sm.setServiceAdminUrl("Changed");
+		assertEquals("Changed", sm.getServiceAdminUrl());
+		sm.setServiceAdminUrl(value);	
 	}
 
 	@Test @Ignore
@@ -102,7 +101,7 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			List<ServiceDetails> sd = sf.getAllServiceDetails();
+			List<ServiceDetails> sd = sm.getAllServiceDetails();
 			assertNotNull(sd);
 			assertTrue(sd.size() > 0);
 			
@@ -118,7 +117,7 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			List<Service> services = sf.getAllServices();
+			List<Service> services = sm.getAllServices();
 			assertNotNull(services);
 			assertTrue(services.size() > 0);
 			
@@ -134,7 +133,7 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			ServiceDetails sd = sf.getServiceDetails(localServiceId);
+			ServiceDetails sd = sm.getServiceDetails(localServiceId);
 			assertNotNull(sd);
 			assertTrue(sd.getServiceId().equals(localServiceId));	
 		}
@@ -149,7 +148,7 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			Service sd = sf.getServiceByName(testServiceName);
+			Service sd = sm.getServiceByName(testServiceName);
 			assertNotNull(sd);
 			assertTrue(sd.getName().equals(testServiceName));	
 		}
@@ -164,7 +163,7 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			ServiceDetails sd = sf.getServiceDetailsByName(testServiceName);
+			ServiceDetails sd = sm.getServiceDetailsByName(testServiceName);
 			assertNotNull(sd);
 			assertTrue(sd.getName().equals(testServiceName));	
 		}
@@ -179,10 +178,10 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			boolean result = sf.addClientCertificateAuthority(localServiceId, certName, certContent);
+			boolean result = sm.addClientCertificateAuthority(localServiceId, certName, certContent);
 			assertTrue(result);
 			
-			result = sf.deleteClientCertificateAuthority(localServiceId, certName);
+			result = sm.deleteClientCertificateAuthority(localServiceId, certName);
 			assertTrue(result);
 		}
 		catch (ApiException | InterruptedException e)
@@ -197,9 +196,9 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			ServiceDetails sd = sf.createService(newServiceName, testServiceType, testServiceClass, testDatacenterId);
+			ServiceDetails sd = sm.createService(newServiceName, testServiceType, testServiceClass, testDatacenterId);
 			assertNotNull(sd);
-			boolean result = sf.deleteService(sd.getServiceId());
+			boolean result = sm.deleteService(sd.getServiceId());
 			assertTrue(result);
 		}
 		catch (ApiException | IOException | InterruptedException e)
@@ -213,7 +212,7 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			boolean result = sf.updateServiceAuthentication(localServiceId, true, true, true);
+			boolean result = sm.updateServiceAuthentication(localServiceId, true, true, true);
 			assertTrue(result);
 		}
 		catch (ApiException | InterruptedException e)
@@ -227,7 +226,7 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			List<User> users = sf.getAllUsers();
+			List<User> users = sm.getAllUsers();
 			assertNotNull(users);
 		}
 		catch (ApiException  e)
@@ -241,7 +240,7 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			List<DataCenter> dcs = sf.getDataCenters();
+			List<DataCenter> dcs = sm.getDataCenters();
 			assertNotNull(dcs);
 			assertTrue(dcs.size() > 0);
 			
@@ -257,7 +256,7 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			User user = sf.getUser(testUserId);
+			User user = sm.getUser(testUserId);
 			assertNotNull(user);
 			assertEquals(testUserId, user.getUserId());
 		}
@@ -274,12 +273,12 @@ public class ServiceFacadeTest extends CommonTestBase
 		{
 			List<String> roles = new ArrayList<String>();
 			roles.add(UserRoles.MessagingServiceViewer);
-			User addedUser = sf.addUser("test2@example.com", roles);
+			User addedUser = sm.addUser("test2@example.com", roles);
 			assertNotNull(addedUser);
-			User user = sf.getUserByEmail("test2@example.com");
+			User user = sm.getUserByEmail("test2@example.com");
 			assertEquals(user.getUserId(), addedUser.getUserId());
 			assertNotNull(user);
-			boolean result = sf.deleteUser(user.getUserId());
+			boolean result = sm.deleteUser(user.getUserId());
 			assertTrue(result);
 		}
 		catch (ApiException  e)
@@ -305,7 +304,7 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			String token = sf.getApiToken(user, pass);
+			String token = sm.getApiToken(user, pass);
 			assertNotNull(token);
 			assertTrue(token.length() > 1);
 			
@@ -321,9 +320,9 @@ public class ServiceFacadeTest extends CommonTestBase
 	{
 		try
 		{
-			boolean result = sf.addClientProfile(localServiceId, "testName");
+			boolean result = sm.addClientProfile(localServiceId, "testName");
 			assertTrue(result);
-			result = sf.deleteClientProfile(localServiceId, "testName");
+			result = sm.deleteClientProfile(localServiceId, "testName");
 			assertTrue(result);
 		}
 		catch (ApiException | InterruptedException  e)
