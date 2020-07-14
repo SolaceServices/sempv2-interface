@@ -2,7 +2,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>com.solace.psg</groupId>
   <artifactId>sempv2-interface</artifactId>
-  <version>0.0.1-SNAPSHOT</version>
+  <version>0.1.0-SNAPSHOT</version>
   <name>sempv2-interface</name>
   <description>Library for handling Semp v2 operations</description>
 
