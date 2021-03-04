@@ -25,6 +25,8 @@ import com.solace.psg.sempv2.admin.model.ClientProfileAsyncRequest;
 import com.solace.psg.sempv2.admin.model.ClientProfileAsyncResponse;
 import com.solace.psg.sempv2.admin.model.ClientProfileStatusResponse;
 import com.solace.psg.sempv2.admin.model.EmptyResponse;
+import com.solace.psg.sempv2.admin.model.Organization;
+import com.solace.psg.sempv2.admin.model.OrganizationsResponse;
 import com.solace.psg.sempv2.admin.model.Role;
 import com.solace.psg.sempv2.admin.model.RoleRequest;
 import com.solace.psg.sempv2.admin.model.RolesResponse;
@@ -365,7 +367,34 @@ public class PubSubCloudConsoleApi
 
 		return response.getToken();
 	}
-	
+
+	/**
+	 * Gets token
+	 * 
+	 * @param apiToken
+	 * @param orgId
+	 * @return
+	 * @throws ApiException
+	 * @throws IOException
+	 */
+	public String getOrgToken(String apiToken, String orgId) throws ApiException, IOException
+	{
+		BearerTokenAuth auth = new BearerTokenAuth(apiToken);
+		
+		apiClient.setAuthentication(auth);
+		
+		String subpath = "/" + orgId;
+
+		Call call = getJsonCall("POST", subpath, null, auth);
+		Type returnType = new TypeToken<ApiTokenResponse>()
+		{
+		}.getType();
+		Response rawResponse = call.execute();
+		ApiTokenResponse response = apiClient.handleResponse(rawResponse, returnType);
+
+		return response.getToken();
+	}
+
 	/**
 	 * Creates a generic JSON call for ApiClient.
 	 * @param verb GET/POST, etc.
@@ -814,7 +843,25 @@ public class PubSubCloudConsoleApi
 		
 		return response.getData().getData();		
 	}
-	
+
+	/**
+	 * Gets all organisation accounts.
+	 * @param accessToken
+	 * @return List<Role>
+	 * @throws ApiException 
+	 */
+	public List<Organization> getAllOrgAccounts(String accessToken) throws ApiException
+	{
+		BearerTokenAuth auth = new BearerTokenAuth(accessToken);
+		apiClient.setAuthentication(auth);
+		
+		Call call = getJsonCall("GET", "", null, auth);
+		Type returnType = new TypeToken<OrganizationsResponse>(){}.getType();
+		ApiResponse<OrganizationsResponse> response = apiClient.execute(call, returnType);
+		
+		return response.getData().getData();		
+	}
+
 	/**
 	 * Adds roles to a user.
 	 * @param accessToken

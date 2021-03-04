@@ -14,6 +14,7 @@ import com.solace.psg.sempv2.apiclient.ApiResponse;
 import com.solace.psg.sempv2.admin.model.ClientProfile;
 import com.solace.psg.sempv2.admin.model.ClientProfileAsyncResponse;
 import com.solace.psg.sempv2.admin.model.DataCenter;
+import com.solace.psg.sempv2.admin.model.Organization;
 import com.solace.psg.sempv2.admin.model.Role;
 import com.solace.psg.sempv2.admin.model.RoleRequest;
 import com.solace.psg.sempv2.admin.model.Service;
@@ -113,6 +114,8 @@ public class ServiceManager
 	
 	private String roleAdminUrl = rootAdminUrl + "/organization/roles";
 	
+	private String accountUrl = rootAdminUrl + "/user/organizations";	
+	
 	private String dcAdminUrl = rootAdminUrl + "/datacenters";
 	
 	//private String orgAdminUrl = rootAdminUrl + "/user/organizations";
@@ -124,6 +127,8 @@ public class ServiceManager
 	private String accountUsername;
 	
 	private String accountPassword;
+	
+	private String accountOrganization;
 	
 	/**
 	 * Gets the current access token set for this Service Facade.
@@ -228,15 +233,28 @@ public class ServiceManager
 	 */
 	public ServiceManager(String accountUsername, String accountPassword) throws ApiException, IOException
 	{
-		this(accountUsername, accountPassword, true);
+		this(accountUsername, accountPassword, null, true);
 	}
-	
+
+	/**
+	 * Initialises a new class instance.  
+	 * @param accountUsername
+	 * @param accountPassword
+	 * @param accountOrganization null if default token, otherwise org id for specific org token.
+	 * @throws IOException 
+	 * @throws ApiException 
+	 */
+	public ServiceManager(String accountUsername, String accountPassword, String accountOrganization) throws ApiException, IOException
+	{
+		this(accountUsername, accountPassword, accountOrganization, true);
+	}
+
 	/**
 	 * Initialises a new class with a given list of cluster services.  
 	 * @throws IOException 
 	 * @throws ApiException 
 	 */
-	public ServiceManager(String accountUsername, String accountPassword, boolean obtainAccessToken) throws ApiException, IOException
+	public ServiceManager(String accountUsername, String accountPassword, String accountOrganization, boolean obtainAccessToken) throws ApiException, IOException
 	{
 		if (accountUsername == null)
 			throw new NullPointerException("Parameter accountUsername cannot be null.");
@@ -245,11 +263,18 @@ public class ServiceManager
 		
 		this.accountUsername = accountUsername;
 		this.accountPassword = accountPassword;
+		this.accountOrganization = accountOrganization;
 		
 		init();
 		
 		if (obtainAccessToken)
+		{
 			accessToken = getApiToken(accountUsername, accountPassword);
+			
+			// If organisation ID is not empty try to get a token for the specified organisation ID
+			if (accountOrganization != null && accountOrganization.length() > 0)
+				accessToken = getOrgToken(accessToken, accountOrganization);
+		}
 	}	
 
 	/**
@@ -632,6 +657,20 @@ public class ServiceManager
 		
 		return api.getAllOrganizationRoles(accessToken);	
 	}
+
+	/**
+	 * Gets all organisation accounts.
+	 * @return List of accounts
+	 * @throws ApiException 
+	 */
+	public List<Organization> getAllOrgAccounts() throws ApiException
+	{
+		apiHttpClient.setBasePath(accountUrl);
+
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
+		
+		return api.getAllOrgAccounts(accessToken);	
+	}
 	
 	/**
 	 * Adds roles to a user.
@@ -671,7 +710,50 @@ public class ServiceManager
 		
 		return result;
 	}
-			
+	
+	/**
+	 * Gets an organisation ID token from an existing API token.
+	 * 
+	 * URL: https://api.solace.cloud/api/v0/iam/tokens/<orgId>
+	 * 
+	 * @param apiToken
+	 * @param orgId the organisation id
+	 * @return org token
+	 * @throws IOException 
+	 * @throws ApiException 
+	 */
+	public String getOrgToken(String apiToken, String orgId) throws ApiException, IOException
+	{
+		if (apiToken == null)
+			throw new NullPointerException("Argument apiToken cannot be null.");
+		if (orgId == null)
+			throw new NullPointerException("Argument orgId cannot be null.");
+		
+		String result = null;
+		
+		apiHttpClient.setBasePath(tokenAdminUrl);
+
+		PubSubCloudConsoleApi api = new PubSubCloudConsoleApi(apiHttpClient); 
+		result = api.getOrgToken(apiToken, orgId);		
+		
+		return result;
+	}
+	
+	/**
+	 * Gets an organisation ID token from an existing API token.
+	 * 
+	 * URL: https://api.solace.cloud/api/v0/iam/tokens/<orgId>
+	 * 
+	 * @param orgId the organisation id
+	 * @return org token
+	 * @throws IOException 
+	 * @throws ApiException 
+	 */
+	public String getOrgToken(String orgId) throws ApiException, IOException
+	{
+		return getOrgToken(this.accessToken, orgId);
+	}		
+	
 	/**
 	 * Add a new Client Profile to a VPN (Service).
 	 * @param serviceId
