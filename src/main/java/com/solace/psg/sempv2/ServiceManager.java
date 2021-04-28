@@ -203,29 +203,29 @@ public class ServiceManager
 	}
 
 	/**
-	 * Initialises a new class with a given list of cluster services.  
+	 * Initialises a new instance of the class.  
 	 */
-	public ServiceManager(List<ServiceDetails> clusterServiceList)
+	private ServiceManager()
 	{
 		init();
 	}
 	
 	/**
-	 * Initialises a new class with a given list of cluster services.  
+	 * Initialises a new class with a given list of services.  
 	 * @throws ApiException 
 	 */
-	public ServiceManager(String clusterAccessToken) throws ApiException
+	public ServiceManager(String accessToken) throws ApiException
 	{
-		if (clusterAccessToken == null)
-			throw new NullPointerException("Parameter clusterAccessToken cannot be null.");
+		if (accessToken == null)
+			throw new NullPointerException("Parameter accessToken cannot be null.");
 		
 		
-		this.accessToken = clusterAccessToken;
+		this.accessToken = accessToken;
 		init();
 	}
 	
 	/**
-	 * Initialises a new class with a given list of cluster services.  
+	 * Initialises a new class with a given list of services.  
 	 * @param accountUsername
 	 * @param accountPassword
 	 * @throws IOException 
@@ -250,7 +250,7 @@ public class ServiceManager
 	}
 
 	/**
-	 * Initialises a new class with a given list of cluster services.  
+	 * Initialises a new class with a given list of services.  
 	 * @throws IOException 
 	 * @throws ApiException 
 	 */
@@ -300,7 +300,7 @@ public class ServiceManager
 	}
 	
 	/**
-	 * Gets all services from a cluster for a provided token.
+	 * Gets all services from a provided token.
 	 * 
 	 * URL: https://api.solace.cloud/api/v0/services
 	 * 
@@ -320,7 +320,7 @@ public class ServiceManager
 	}
 	
 	/**
-	 * Gets detailed information on a service like URLS, Ports, credentials, cluster info. 
+	 * Gets detailed information on a service like URLS, Ports, credentials, info. 
 	 * 
 	 * URL: https://api.solace.cloud/api/v0/services/{{serviceId}}
 	 * 
@@ -689,7 +689,7 @@ public class ServiceManager
 	}
 	
 	/**
-	 * Gets an API management token configured for the cluster by using an account username and password.
+	 * Gets an API management token configured for the account by using an account username and password.
 	 * 
 	 * URL: https://api.solace.cloud/api/v0/iam/tokens
 	 * 

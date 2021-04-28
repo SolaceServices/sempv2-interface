@@ -134,7 +134,7 @@ public class VpnManagerTest extends CommonTestBase
 			List<MsgVpnBridge> bridges = vm.getBridges();
 			assertNotNull(bridges);
 			int size = bridges.size();
-			boolean result = vm.createBridge(remoteService, subscriptions);
+			boolean result = vm.createBridge(remoteService, subscriptions, true, false, null, null, null, null, null, null);
 			assertTrue(result);	
 			
 			bridges = vm.getBridges();

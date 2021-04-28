@@ -35,6 +35,8 @@ import com.solace.psg.sempv2.config.model.MsgVpnBridgeRemoteMsgVpnResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnBridgeRemoteSubscription;
 import com.solace.psg.sempv2.config.model.MsgVpnBridgeRemoteSubscriptionResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnBridgeResponse;
+import com.solace.psg.sempv2.config.model.MsgVpnBridgeTlsTrustedCommonName;
+import com.solace.psg.sempv2.config.model.MsgVpnBridgeTlsTrustedCommonNameResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnBridgesResponse;
 import com.solace.psg.sempv2.config.model.MsgVpnClientProfile;
 import com.solace.psg.sempv2.config.model.MsgVpnClientProfileResponse;
@@ -101,6 +103,9 @@ public class VpnManager
 	private long connectionRetryCount = 0L;
 
 	private long maxTtl = 8L;
+	
+	// Default Solace Trusten Common Name
+	private String defaultSolaceTCN = "*.messaging.solace.cloud";
 	
 	/**
 	 * The Client API.
@@ -270,7 +275,7 @@ public class VpnManager
 	 */
 	public boolean createBridge(ServiceDetails remoteVpnName) throws ApiException
 	{
-		return createBridge(remoteVpnName, null, null, true);
+		return createBridge(remoteVpnName, null, null, true, true, false, null, null, null, null, null, null);
 	}
 	
 	/**
@@ -280,10 +285,10 @@ public class VpnManager
 	 * @return True if successful, otherwise false.
 	 * @throws ApiException 
 	 */
-	public boolean createBridge(ServiceDetails remoteService, List<Subscription> subscriptions) throws ApiException
+	public boolean createBridge(ServiceDetails remoteService, List<Subscription> subscriptions, boolean rollback, boolean cert, String localUsername, String localPassword, String remoteUsername, String remotePassword, String localTcn, String remoteTcn) throws ApiException
 	{
 		String bridgeName = getBridgeName(remoteService.getMsgVpnAttributes().getVpnName());
-		return createBridge(remoteService, bridgeName, subscriptions, true);
+		return createBridge(remoteService, bridgeName, subscriptions, true, rollback, cert, localUsername, localPassword, remoteUsername, remotePassword, localTcn, remoteTcn);
 	}
 	
 	/**
@@ -293,15 +298,27 @@ public class VpnManager
 	 * @return True if successful, otherwise false.
 	 * @throws ApiException 
 	 */
-	public boolean createBridge(ServiceDetails remoteService, String bridgeName, List<Subscription> subscriptions, boolean ignoreExists) throws ApiException
+	public boolean createBridge(ServiceDetails remoteService, String bridgeName, List<Subscription> subscriptions, boolean ignoreExists, boolean rollback, boolean cert, String localUsername, String localPassword, String remoteUsername, String remotePassword, String localTcn, String remoteTcn) throws ApiException
 	{
 		boolean result = false;
-		ServiceManagementContext remoteContext = new ServiceManagementContext(remoteService);
 		
-		if (localContext.getSmfUrl() == null || localContext.getSmfUrl() == null)
+		ServiceManagementContext remoteContext = new ServiceManagementContext(remoteService);
+
+		if ((localUsername == null) || (localUsername.isEmpty()))
+		{
+			localUsername = localContext.getUserUsername(); 
+			localPassword = localContext.getUserPassword(); 
+		}
+		if ((remoteUsername == null) || (remoteUsername.isEmpty()))
+		{
+			remoteUsername = remoteContext.getUserUsername(); 
+			remotePassword = remoteContext.getUserPassword(); 	
+		}
+		
+		if (localContext.getSmfUrl() == null && localContext.getSecureSmfUrl() == null)
 			throw new IllegalArgumentException("SMF URL is null. Bridge cannot be created. Enable SMF or create a TLS bridge.");
 		
-		String queueName = getBridgeQueueName(remoteContext.getVpnName());
+		String bridgeQeueName = getBridgeQueueName(remoteContext.getVpnName());
 		
 		// Split subscriptions
 		ArrayList<Subscription> localDirectSubscriptions = new ArrayList<Subscription>();
@@ -328,34 +345,87 @@ public class VpnManager
 				}
 			}
 		}
-		
-		// Add local bridge queue, local bridge, remote bridge and subscriptions
-		if (!addBridgeQueue(localContext, queueName, ignoreExists))
-			return false;
-		
+				
 		MsgVpnBridge request = new MsgVpnBridge();
 		request.setBridgeName(bridgeName);
 		request.setBridgeVirtualRouter(BridgeVirtualRouterEnum.AUTO);
-		request.enabled(true);
-		request.setRemoteAuthenticationBasicClientUsername(remoteContext.getUserUsername());
-		request.setRemoteAuthenticationBasicPassword(remoteContext.getUserPassword());
-		request.setRemoteAuthenticationScheme(RemoteAuthenticationSchemeEnum.BASIC);
+		request.enabled(false);		
 		request.setMaxTtl(maxTtl);
 		request.setRemoteConnectionRetryDelay(connectionRetryDelay);
 		request.remoteConnectionRetryCount(connectionRetryCount);
 		request.setRemoteDeliverToOnePriority(MsgVpnBridge.RemoteDeliverToOnePriorityEnum.P1);
 		
+		if (cert)
+		{
+			request.setRemoteAuthenticationScheme(RemoteAuthenticationSchemeEnum.CLIENT_CERTIFICATE);
+			request.setRemoteAuthenticationClientCertContent(remoteUsername);
+			request.setRemoteAuthenticationClientCertPassword(remotePassword);
+		}
+		else
+		{
+			request.setRemoteAuthenticationBasicClientUsername(remoteUsername);
+			request.setRemoteAuthenticationBasicPassword(remotePassword);
+			request.setRemoteAuthenticationScheme(RemoteAuthenticationSchemeEnum.BASIC);
+		}
+
+		// Add local bridge queue, local bridge, remote bridge and subscriptions
+		if (!addBridgeQueue(localContext, bridgeQeueName, ignoreExists))
+			return false;
+
+		// Create a local bridge
 		if (!createLocalBridge(localContext, request))
+		{
+			if (rollback)
+				deleteQueue(localContext.getVpnName(), bridgeQeueName);
 			return false;
+		}
 		
-		// This a workaround bit to make the bridge created but not work. In this case the bridge should be created with TLS.
-		String smfUrl = remoteContext.getSmfUrl();
-		/*if (smfUrl == null)
-			smfUrl = remoteContext.getSecureSmfUrl();*/
-		
-		if (!createRemoteVpn(localContext, smfUrl, remoteContext.getVpnName(), bridgeName, queueName))
+		// Add remote VPN to the bridge
+		if (!createRemoteVpn(localContext, remoteContext.getSecureSmfUrl(), remoteContext.getVpnName(), bridgeName, bridgeQeueName, true))
+		{
+			if (rollback)
+			{
+				api.deleteMsgVpnBridge(localContext.getVpnName(), bridgeName, "auto");
+				deleteQueue(localContext.getVpnName(), bridgeQeueName);
+			}
 			return false;
+		}
+		
+		// Add default TCN to the bridge
+		if (!addBridgeTCN(localContext.getVpnName(), bridgeName, defaultSolaceTCN))
+		{
+			if (rollback)
+			{
+				api.deleteMsgVpnBridge(localContext.getVpnName(), bridgeName, "auto");
+				deleteQueue(localContext.getVpnName(), bridgeQeueName);
+			}
+			return false;
+		}
+
+		// Add remote TCN to the bridge
+		if (cert)
+			if (!addBridgeTCN(localContext.getVpnName(), bridgeName, remoteTcn))
+			{
+				if (rollback)
+				{
+					api.deleteMsgVpnBridge(localContext.getVpnName(), bridgeName, "auto");
+					deleteQueue(localContext.getVpnName(), bridgeQeueName);
+				}
+				return false;
+			}
+
+		// Enable bridge
+		if (!enableLocalBridge(localContext, bridgeName))
+		{
+			if (rollback)
+			{
+				api.deleteMsgVpnBridge(localContext.getVpnName(), bridgeName, "auto");
+				deleteQueue(localContext.getVpnName(), bridgeQeueName);
+			}
+			return false;
+		}
 				
+		// Add bridge subscriptions	
 		if (localDirectSubscriptions != null)
 		{
 			for (Subscription subscription : localDirectSubscriptions)
@@ -365,23 +435,98 @@ public class VpnManager
 			}
 			for (Subscription subscription : localGuaranteedSubscriptions)
 			{
- 				if (!applyQueueSubscription(localContext, queueName, subscription))
+ 				if (!applyQueueSubscription(localContext, bridgeQeueName, subscription))
 					return false;					
 			}
 		}
 		try // add remote queue, bridge, remote bridge and subscriptions to create the bidirectional bridge
 		{
 			setVpnContext(remoteContext);
-			if (!addBridgeQueue(remoteContext, queueName, ignoreExists))
+			if (!addBridgeQueue(remoteContext, bridgeQeueName, ignoreExists))
+			{
+				if (rollback)
+				{
+					api.deleteMsgVpnBridge(localContext.getVpnName(), bridgeName, "auto");
+					deleteQueue(localContext.getVpnName(), bridgeQeueName);
+				}
 				return false;
-			request.setRemoteAuthenticationBasicClientUsername(localContext.getUserUsername());
-			request.setRemoteAuthenticationBasicPassword(localContext.getUserPassword());
-			if (!createLocalBridge(remoteContext, request))
-				return false;
-			String remoteMsgVpnLocation = "v:" + localContext.getPrimaryRouterName();
-			if (!createRemoteVpn(remoteContext, remoteMsgVpnLocation, localContext.getVpnName(), bridgeName, queueName))
-				return false;
+			}
 			
+			// Change request properties for the remote bridge to use the local bridge user.
+			if (cert)
+			{
+				request.setRemoteAuthenticationClientCertContent(localUsername);
+				request.setRemoteAuthenticationClientCertPassword(localPassword);
+			}
+			else
+			{
+				request.setRemoteAuthenticationBasicClientUsername(localUsername);
+				request.setRemoteAuthenticationBasicPassword(localPassword);
+			}
+			
+			if (!createLocalBridge(remoteContext, request))
+			{
+				if (rollback)
+				{
+					deleteQueue(remoteContext.getVpnName(), bridgeQeueName);
+					api.deleteMsgVpnBridge(localContext.getVpnName(), bridgeName, "auto");
+					deleteQueue(localContext.getVpnName(), bridgeQeueName);
+				}
+				return false;
+			}
+			String remoteMsgVpnLocation = "v:" + localContext.getPrimaryRouterName();
+			if (!createRemoteVpn(remoteContext, remoteMsgVpnLocation, localContext.getVpnName(), bridgeName, bridgeQeueName, true))
+			{
+				if (rollback)
+				{
+					deleteQueue(remoteContext.getVpnName(), bridgeQeueName);
+					deleteRemoteBridge(remoteService, bridgeName, "auto", bridgeQeueName);
+					api.deleteMsgVpnBridge(localContext.getVpnName(), bridgeName, "auto");
+					deleteQueue(localContext.getVpnName(), bridgeQeueName);
+				}
+				return false;
+			}
+
+			// Add TCMs to the bridge
+			if (!addBridgeTCN(remoteContext.getVpnName(), bridgeName, defaultSolaceTCN))
+			{
+				if (rollback)
+				{
+					deleteQueue(remoteContext.getVpnName(), bridgeQeueName);
+					deleteRemoteBridge(remoteService, bridgeName, "auto", bridgeQeueName);
+					api.deleteMsgVpnBridge(localContext.getVpnName(), bridgeName, "auto");
+					deleteQueue(localContext.getVpnName(), bridgeQeueName);
+				}
+				return false;
+			}
+
+			if (cert)
+				// Add TCMs to the bridge
+				if (!addBridgeTCN(remoteContext.getVpnName(), bridgeName, localTcn))
+				{
+					if (rollback)
+					{
+						deleteQueue(remoteContext.getVpnName(), bridgeQeueName);
+						deleteRemoteBridge(remoteService, bridgeName, "auto", bridgeQeueName);
+						api.deleteMsgVpnBridge(localContext.getVpnName(), bridgeName, "auto");
+						deleteQueue(localContext.getVpnName(), bridgeQeueName);
+					}
+					return false;
+				}
+
+			// Enable bridge
+			if (!enableLocalBridge(remoteContext, bridgeName))
+			{
+				if (rollback)
+				{
+					deleteQueue(remoteContext.getVpnName(), bridgeQeueName);
+					deleteRemoteBridge(remoteService, bridgeName, "auto", bridgeQeueName);
+					api.deleteMsgVpnBridge(localContext.getVpnName(), bridgeName, "auto");
+					deleteQueue(localContext.getVpnName(), bridgeQeueName);
+				}
+				return false;
+			}
+
 			if (remoteDirectSubscriptions != null)
 			{
 				for (Subscription subscription : remoteDirectSubscriptions)
@@ -391,7 +536,7 @@ public class VpnManager
 				}
 				for (Subscription subscription : remoteGuaranteedSubscriptions)
 				{
-	 				if (!applyQueueSubscription(remoteContext, queueName, subscription))
+	 				if (!applyQueueSubscription(remoteContext, bridgeQeueName, subscription))
 						return false;					
 				}
 			}
@@ -404,6 +549,27 @@ public class VpnManager
 		
 		return result;
 	}
+
+	/**
+	 * Adds a TCM for a specified bridge. This is until version 9.6 only, From version 9.7 Server Certificate Name validation replaces the TCM:
+	 * https://docs.solace.com/Configuring-and-Managing/Configuring-Server-Cert-Validation.htm
+	 * @param vpnName the VPN name.
+	 * @param bridgeName the bridge name
+	 * @param tcm the TCM
+	 * @return true if successful
+	 * @throws ApiException
+	 */
+	public boolean addBridgeTCN(String vpnName, String bridgeName, String tcm) throws ApiException
+	{
+		MsgVpnBridgeTlsTrustedCommonName body = new MsgVpnBridgeTlsTrustedCommonName();
+		body.setTlsTrustedCommonName(tcm);
+		//body.setBridgeName(bridgeName);
+		//body.setMsgVpnName(vpnName);
+		
+		MsgVpnBridgeTlsTrustedCommonNameResponse response = api.createMsgVpnBridgeTlsTrustedCommonName(vpnName, bridgeName, "auto", body, null);
+	
+		return (response.getMeta().getResponseCode() == 200);
+	}
 		
 	/**
 	 * Create remote VPN for a bridge.
@@ -415,7 +581,7 @@ public class VpnManager
 	 * @return True if successful, otherwise false.
 	 * @throws ApiException
 	 */
-	private boolean createRemoteVpn(ServiceManagementContext context, String remoteMsgVpnLocation, String remoteVpnName, String bridgeName, String queueName) throws ApiException
+	private boolean createRemoteVpn(ServiceManagementContext context, String remoteMsgVpnLocation, String remoteVpnName, String bridgeName, String queueName, boolean tlsEnabled) throws ApiException
 	{
 		MsgVpnBridgeRemoteMsgVpn request = new MsgVpnBridgeRemoteMsgVpn();
 		request.setBridgeName(bridgeName);
@@ -429,12 +595,28 @@ public class VpnManager
 		request.setCompressedDataEnabled(false);
 		request.setEgressFlowWindowSize(bridgeEgressWorkflowSize);
 		request.setRemoteMsgVpnName(remoteVpnName);
-		request.setTlsEnabled(false);
+		request.setTlsEnabled(tlsEnabled);
 		request.setUnidirectionalClientProfile(unidirectionalClientProfile);
 		
 		MsgVpnBridgeRemoteMsgVpnResponse response = api.createMsgVpnBridgeRemoteMsgVpn(context.getVpnName(), bridgeName, "auto", request, null);
 		return (response.getMeta().getResponseCode() == 200);
 	}
+
+	/**
+	 * Enables a local bridge.
+	 * @param request
+	 * @return True if successful, otherwise false.
+	 * @throws ApiException
+	 */
+	private boolean enableLocalBridge(ServiceManagementContext context, String bridgeName) throws ApiException
+	{
+		MsgVpnBridge request = new MsgVpnBridge();
+		request.setEnabled(true);
+		
+		MsgVpnBridgeResponse response = api.updateMsgVpnBridge(context.getVpnName(), bridgeName, "auto", request, null);
+		return (response.getMeta().getResponseCode() == 200);
+	}
+
 	
 	/**
 	 * Creates a local bridge.

@@ -36,6 +36,15 @@ public class ServiceManagementContext
 		return ssmfUrl;
 	}
 
+	/**
+	 * Gets the Secure SMF String.
+	 * @return the ssmfUrl
+	 */
+	public String getSecureSmfUrlWithPrefix()
+	{
+		return SECURE_SMF_PREFIX + ssmfUrl;
+	}
+	
 	private String clusterPassword;
 	private String clusterName;
 	
@@ -63,6 +72,14 @@ public class ServiceManagementContext
 		return smfUrl;
 	}
 
+	/**
+	 * Gets the Secure SMF String.
+	 * @return the ssmfUrl
+	 */
+	public String getSmfUrlWithPrefix()
+	{
+		return SMF_PREFIX + smfUrl;
+	}
 	/**
 	 * @param smfUrl the smfUrl to set
 	 */
@@ -163,7 +180,7 @@ public class ServiceManagementContext
 			{
 				for (EndPoint ep : mp.getEndPoints())
 				{
-					if (ep.getName().equalsIgnoreCase("SEMP Config"))
+					if ((ep.getName().equalsIgnoreCase("SEMP Config")) || (ep.getName().equalsIgnoreCase("Secured SEMP Config")))
 					{
 							sempV1Url = sempUrl = ep.getUris().get(0);
 							if (sempUrl.endsWith("/v2/config"))

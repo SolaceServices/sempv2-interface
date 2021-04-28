@@ -5,6 +5,7 @@ import com.google.gson.annotations.Expose;
 @javax.annotation.Resource
 public class ClientProfile {
 
+	
     @Expose
     private String allowBridgeConnectionsEnabled = "false";
     @Expose
@@ -23,6 +24,8 @@ public class ClientProfile {
     private Object apiTopicEndpointManagementCopyFromOnCreateName;
     @Expose
     private String clientProfileName;
+    @Expose
+    private String elidingEnabled = "false";
     @Expose
     private Object id;
     @Expose
