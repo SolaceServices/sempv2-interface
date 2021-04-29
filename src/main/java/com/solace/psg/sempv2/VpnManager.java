@@ -104,8 +104,10 @@ public class VpnManager
 
 	private long maxTtl = 8L;
 	
-	// Default Solace Trusten Common Name
+	// Default Solace Trusted Common Name
 	private String defaultSolaceTCN = "*.messaging.solace.cloud";
+	
+	private String opaquePassword = "ago4156_do78";
 	
 	/**
 	 * The Client API.
@@ -120,6 +122,8 @@ public class VpnManager
 		api = new MsgVpnApi();
 		this.localService = service;
 		this.localContext = new ServiceManagementContext(service);
+		
+		this.opaquePassword = "" + service.hashCode();
 		
 		setDefaultVpnContext();
 	}
@@ -209,7 +213,7 @@ public class VpnManager
 	 */
 	public MsgVpnAclProfile addAclProfile(MsgVpnAclProfile profile, List<String> select) throws ApiException
 	{
-		MsgVpnAclProfileResponse response = api.createMsgVpnAclProfile(localContext.getVpnName(), profile, select);
+		MsgVpnAclProfileResponse response = api.createMsgVpnAclProfile(profile, localContext.getVpnName(), opaquePassword, select);
 		return response.getData();
 	}
 	
@@ -220,7 +224,7 @@ public class VpnManager
 	 */
 	public List<MsgVpnAclProfile> getAclProfiles() throws ApiException
 	{
-		MsgVpnAclProfilesResponse response = api.getMsgVpnAclProfiles(localContext.getVpnName(), defaultAclCount, null, null, null);
+		MsgVpnAclProfilesResponse response = api.getMsgVpnAclProfiles(localContext.getVpnName(), defaultAclCount, null, opaquePassword, null, null);
 		return response.getData();
 	}
 
@@ -231,7 +235,7 @@ public class VpnManager
 	 */
 	public MsgVpnClientProfile getClientProfile(String clientProfileName) throws ApiException
 	{
-		MsgVpnClientProfileResponse response = api.getMsgVpnClientProfile(localContext.getVpnName(), clientProfileName, null);
+		MsgVpnClientProfileResponse response = api.getMsgVpnClientProfile(localContext.getVpnName(), clientProfileName, opaquePassword, null);
 		return response.getData();
 	}
 
@@ -242,7 +246,7 @@ public class VpnManager
 	 */
 	public List<MsgVpnClientProfile> listClientProfiles() throws ApiException
 	{
-		MsgVpnClientProfilesResponse response = api.getMsgVpnClientProfiles(localContext.getVpnName(), defaultAclCount,  null, null, null);
+		MsgVpnClientProfilesResponse response = api.getMsgVpnClientProfiles(localContext.getVpnName(), defaultAclCount,  null, opaquePassword, null, null);
 		return response.getData();
 	}
 	
@@ -262,7 +266,7 @@ public class VpnManager
 		request.setRemoteMsgVpnName(remoteContext.getVpnName());
 		request.setRemoteNodeName(remoteNodeName);
 		
-		MsgVpnDmrBridgeResponse response = api.createMsgVpnDmrBridge(localContext.getVpnName(), request, null);
+		MsgVpnDmrBridgeResponse response = api.createMsgVpnDmrBridge(request , localContext.getVpnName(), opaquePassword, null);
 		
 		return (response.getMeta().getResponseCode() == 200);
 	}
@@ -566,7 +570,7 @@ public class VpnManager
 		//body.setBridgeName(bridgeName);
 		//body.setMsgVpnName(vpnName);
 		
-		MsgVpnBridgeTlsTrustedCommonNameResponse response = api.createMsgVpnBridgeTlsTrustedCommonName(vpnName, bridgeName, "auto", body, null);
+		MsgVpnBridgeTlsTrustedCommonNameResponse response = api.createMsgVpnBridgeTlsTrustedCommonName(body, vpnName, bridgeName, "auto", opaquePassword, null);
 	
 		return (response.getMeta().getResponseCode() == 200);
 	}
@@ -598,7 +602,7 @@ public class VpnManager
 		request.setTlsEnabled(tlsEnabled);
 		request.setUnidirectionalClientProfile(unidirectionalClientProfile);
 		
-		MsgVpnBridgeRemoteMsgVpnResponse response = api.createMsgVpnBridgeRemoteMsgVpn(context.getVpnName(), bridgeName, "auto", request, null);
+		MsgVpnBridgeRemoteMsgVpnResponse response = api.createMsgVpnBridgeRemoteMsgVpn(request, context.getVpnName(), bridgeName, "auto", opaquePassword, null);
 		return (response.getMeta().getResponseCode() == 200);
 	}
 
@@ -613,7 +617,7 @@ public class VpnManager
 		MsgVpnBridge request = new MsgVpnBridge();
 		request.setEnabled(true);
 		
-		MsgVpnBridgeResponse response = api.updateMsgVpnBridge(context.getVpnName(), bridgeName, "auto", request, null);
+		MsgVpnBridgeResponse response = api.updateMsgVpnBridge(request, context.getVpnName(), bridgeName, "auto", opaquePassword, null);
 		return (response.getMeta().getResponseCode() == 200);
 	}
 
@@ -626,7 +630,7 @@ public class VpnManager
 	 */
 	private boolean createLocalBridge(ServiceManagementContext context, MsgVpnBridge request) throws ApiException
 	{
-		MsgVpnBridgeResponse response = api.createMsgVpnBridge(context.getVpnName(), request, null);
+		MsgVpnBridgeResponse response = api.createMsgVpnBridge(request, context.getVpnName(), opaquePassword, null);
 		return (response.getMeta().getResponseCode() == 200);
 	}
 
@@ -677,7 +681,7 @@ public class VpnManager
 	 */
 	public MsgVpnQueue getQueue(String queueName) throws ApiException
 	{
-		return api.getMsgVpnQueue(localContext.getVpnName(), queueName, null).getData();
+		return api.getMsgVpnQueue(localContext.getVpnName(), queueName, opaquePassword, null).getData();
 	}
 
 	/**
@@ -692,7 +696,7 @@ public class VpnManager
 		boolean result = false;
 		try
 		{
-			MsgVpnQueueResponse response = api.createMsgVpnQueue(context.getVpnName(), queueRequest, null);
+			MsgVpnQueueResponse response = api.createMsgVpnQueue(queueRequest, context.getVpnName(), opaquePassword, null);
 			result = (response.getMeta().getResponseCode() == 200);
 		}
 		catch(ApiException ex)
@@ -711,7 +715,7 @@ public class VpnManager
 	 */
 	public List<MsgVpnQueue> listQueues() throws ApiException
 	{
-		MsgVpnQueuesResponse response = api.getMsgVpnQueues(localContext.getVpnName(), defaultQueueCount, null, null, null);
+		MsgVpnQueuesResponse response = api.getMsgVpnQueues(localContext.getVpnName(), defaultQueueCount, null, opaquePassword, null, null);
 		return response.getData();
 	}
 	
@@ -732,7 +736,7 @@ public class VpnManager
 		request.setMsgVpnName(context.getVpnName());
 		request.setRemoteSubscriptionTopic(subscription.getName());
 		
-		MsgVpnBridgeRemoteSubscriptionResponse response = api.createMsgVpnBridgeRemoteSubscription(context.getVpnName(), bridgeName, "auto", request, null);
+		MsgVpnBridgeRemoteSubscriptionResponse response = api.createMsgVpnBridgeRemoteSubscription(request, context.getVpnName(), bridgeName, "auto", opaquePassword, null);
 		
 		return (response.getMeta().getResponseCode() == 200);
 	}
@@ -750,7 +754,7 @@ public class VpnManager
 		request.setQueueName(queueName);
 		request.setSubscriptionTopic(subscription.getName());
 		
-		MsgVpnQueueSubscriptionResponse response = api.createMsgVpnQueueSubscription(context.getVpnName(), queueName, request, null);
+		MsgVpnQueueSubscriptionResponse response = api.createMsgVpnQueueSubscription(request, context.getVpnName(), queueName, opaquePassword, null);
 		
 		return (response.getMeta().getResponseCode() == 200);
 	}
@@ -962,7 +966,7 @@ public class VpnManager
 	public List<MsgVpnBridge> getBridges() throws ApiException
 	{
 		// get msgVpnName instead as currently they can be different.
-		MsgVpnBridgesResponse response = api.getMsgVpnBridges(localService.getMsgVpnAttributes().getVpnName(), defaultBridgeCount, null, null, null);
+		MsgVpnBridgesResponse response = api.getMsgVpnBridges(localService.getMsgVpnAttributes().getVpnName(), defaultBridgeCount, null, opaquePassword, null, null);
 		return response.getData();
 	}
 	

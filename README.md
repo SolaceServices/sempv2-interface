@@ -24,14 +24,21 @@ Go to https://editor.swagger.io/ and import the YAML files for Action, Config an
 To build with a tool the code can be obtained from: https://github.com/swagger-api/swagger-codegen and then build the code:
 `mvn clean package`
 
-Create a config file named *config.json*:
-	{
-		"modelPackage" : "com.solace.psg.sempv2.action",
-		"apiPackage" : "com.solace.psg.sempv2.action.api"
-	}
+Create a config file named *action.json*:
+```
+{
+	"modelPackage" : "com.solace.psg.sempv2.action.model",
+	"apiPackage" : "com.solace.psg.sempv2.action.api"
+}
+```
 
-To build with Java copy the Json schemas on the path *<swagger-codegentool-path>/modules/swagger-codegen-cli/target* and run: 
-`java -jar swagger-codegen-cli.jar generate -i semp-v2-swagger-action.json -l java -o sempv2.action -c config.json`
+To build *action* packages with the code generator cli, copy the JSON schemas on the path *<swagger-codegentool-path>/modules/swagger-codegen-cli/target* and run: 
+`java -jar swagger-codegen-cli.jar generate -i semp-v2-swagger-action.json -l java -o sempv2.action -c action.json`
 
+## Merging with existing code when building a newer version
+1. From the package com.solace.psg.sempv2.action move all classes from the current folder to a package named: com.solace.psg.sempv2.action.model. 
+2. Import all generated classes from .action.api and .action.model packages. In the .api package classes, the unresolved imports need to be changed manually to com.solace.psg.sempv2.apiclient.
+3. Import the test classes in the corresponding test package. 
 
+Repeat the same steps for *config* and *monitor* schemas.
   

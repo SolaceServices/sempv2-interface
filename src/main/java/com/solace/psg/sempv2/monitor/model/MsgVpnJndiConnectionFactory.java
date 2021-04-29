@@ -1,15 +1,14 @@
 /*
  * SEMP (Solace Element Management Protocol)
- * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any (non-exclusively) of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written|See note 3 Write-Only|Attribute can only be written, not read| Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version|    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object|New attribute values|Object attributes and metadata|Set to default (but see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters \"q1\" and \"q2\" ; with values \"val1\" and \"val2\" respectively /SEMP/v2/monitor/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/monitor/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/monitor/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/monitor/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/monitor/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/monitor/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/monitor/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/monitor/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/monitor/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|For PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT. If the object does not exist, it is created first.    
+ * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any combination of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written.|See note 3 Write-Only|Attribute can only be written, not read, unless the attribute is also opaque|See the documentation for the opaque property Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version| Opaque|Attribute can be set or retrieved in opaque form when the `opaquePassword` query parameter is present|See the `opaquePassword` query parameter documentation    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    In the monitoring API, any non-identifying attribute may not be returned in a GET.  ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object (see note 5)|New attribute values|Object attributes and metadata|Set to default, with certain exceptions (see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters ; \"q1\" and \"q2\" with values \"val1\" and \"val2\" respectively /SEMP/v2/monitor/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/monitor/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/monitor/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/monitor/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/monitor/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/monitor/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/monitor/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/monitor/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/monitor/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ### opaquePassword  Attributes with the opaque property are also write-only and so cannot normally be retrieved in a GET. However, when a password is provided in the `opaquePassword` query parameter, attributes with the opaque property are retrieved in a GET in opaque form, encrypted with this password. The query parameter can also be used on a POST, PATCH, or PUT to set opaque attributes using opaque attribute values retrieved in a GET, so long as:  1. the same password that was used to retrieve the opaque attribute values is provided; and  2. the broker to which the request is being sent has the same major and minor SEMP version as the broker that produced the opaque attribute values.  The password provided in the query parameter must be a minimum of 8 characters and a maximum of 128 characters.  The query parameter can only be used in the configuration API, and only over HTTPS.  ## Help  Visit [our website](https://solace.com) to learn more about Solace.  You can also download the SEMP API specifications by clicking [here](https://solace.com/downloads/).  If you need additional support, please contact us at [support@solace.com](mailto:support@solace.com).  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|On a PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT, except in the following two cases: there is a mutual requires relationship with another non-write-only attribute and both attributes are absent from the request; or the attribute is also opaque and the `opaquePassword` query parameter is provided in the request. 5|On a PUT, if the object does not exist, it is created first.  
  *
- * OpenAPI spec version: 9.4
+ * OpenAPI spec version: 2.17
  * Contact: support@solace.com
  *
  * NOTE: This class is auto generated by the swagger code generator program.
  * https://github.com/swagger-api/swagger-codegen.git
  * Do not edit the class manually.
  */
-
 
 package com.solace.psg.sempv2.monitor.model;
 
@@ -20,14 +19,13 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.io.IOException;
-
 /**
  * MsgVpnJndiConnectionFactory
  */
-@javax.annotation.Generated(value = "io.swagger.codegen.languages.JavaClientCodegen", date = "2020-03-13T23:07:13.589Z")
+
+@javax.annotation.Generated(value = "io.swagger.codegen.v3.generators.java.JavaClientCodegen", date = "2021-04-29T21:57:21.016551900+01:00[Europe/London]")
 public class MsgVpnJndiConnectionFactory {
   @SerializedName("allowDuplicateClientIdEnabled")
   private Boolean allowDuplicateClientIdEnabled = null;
@@ -86,7 +84,6 @@ public class MsgVpnJndiConnectionFactory {
   @JsonAdapter(MessagingDefaultDeliveryModeEnum.Adapter.class)
   public enum MessagingDefaultDeliveryModeEnum {
     PERSISTENT("persistent"),
-    
     NON_PERSISTENT("non-persistent");
 
     private String value;
@@ -94,7 +91,6 @@ public class MsgVpnJndiConnectionFactory {
     MessagingDefaultDeliveryModeEnum(String value) {
       this.value = value;
     }
-
     public String getValue() {
       return value;
     }
@@ -103,7 +99,6 @@ public class MsgVpnJndiConnectionFactory {
     public String toString() {
       return String.valueOf(value);
     }
-
     public static MessagingDefaultDeliveryModeEnum fromValue(String text) {
       for (MessagingDefaultDeliveryModeEnum b : MessagingDefaultDeliveryModeEnum.values()) {
         if (String.valueOf(b.value).equals(text)) {
@@ -112,7 +107,6 @@ public class MsgVpnJndiConnectionFactory {
       }
       return null;
     }
-
     public static class Adapter extends TypeAdapter<MessagingDefaultDeliveryModeEnum> {
       @Override
       public void write(final JsonWriter jsonWriter, final MessagingDefaultDeliveryModeEnum enumeration) throws IOException {
@@ -121,13 +115,11 @@ public class MsgVpnJndiConnectionFactory {
 
       @Override
       public MessagingDefaultDeliveryModeEnum read(final JsonReader jsonReader) throws IOException {
-        String value = jsonReader.nextString();
+        Object value = jsonReader.nextString();
         return MessagingDefaultDeliveryModeEnum.fromValue(String.valueOf(value));
       }
     }
-  }
-
-  @SerializedName("messagingDefaultDeliveryMode")
+  }  @SerializedName("messagingDefaultDeliveryMode")
   private MessagingDefaultDeliveryModeEnum messagingDefaultDeliveryMode = null;
 
   @SerializedName("messagingDefaultDmqEligibleEnabled")
@@ -208,7 +200,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether new JMS connections can use the same Client identifier (ID) as an existing connection.
    * @return allowDuplicateClientIdEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether new JMS connections can use the same Client identifier (ID) as an existing connection.")
+  @Schema(description = "Indicates whether new JMS connections can use the same Client identifier (ID) as an existing connection.")
   public Boolean isAllowDuplicateClientIdEnabled() {
     return allowDuplicateClientIdEnabled;
   }
@@ -226,7 +218,7 @@ public class MsgVpnJndiConnectionFactory {
    * The description of the Client.
    * @return clientDescription
   **/
-  @ApiModelProperty(value = "The description of the Client.")
+  @Schema(description = "The description of the Client.")
   public String getClientDescription() {
     return clientDescription;
   }
@@ -244,7 +236,7 @@ public class MsgVpnJndiConnectionFactory {
    * The Client identifier (ID). If not specified, a unique value for it will be generated.
    * @return clientId
   **/
-  @ApiModelProperty(value = "The Client identifier (ID). If not specified, a unique value for it will be generated.")
+  @Schema(description = "The Client identifier (ID). If not specified, a unique value for it will be generated.")
   public String getClientId() {
     return clientId;
   }
@@ -262,7 +254,7 @@ public class MsgVpnJndiConnectionFactory {
    * The name of the JMS Connection Factory.
    * @return connectionFactoryName
   **/
-  @ApiModelProperty(value = "The name of the JMS Connection Factory.")
+  @Schema(description = "The name of the JMS Connection Factory.")
   public String getConnectionFactoryName() {
     return connectionFactoryName;
   }
@@ -280,7 +272,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether overriding by the Subscriber (Consumer) of the deliver-to-one (DTO) property on messages is enabled. When enabled, the Subscriber can receive all DTO tagged messages.
    * @return dtoReceiveOverrideEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether overriding by the Subscriber (Consumer) of the deliver-to-one (DTO) property on messages is enabled. When enabled, the Subscriber can receive all DTO tagged messages.")
+  @Schema(description = "Indicates whether overriding by the Subscriber (Consumer) of the deliver-to-one (DTO) property on messages is enabled. When enabled, the Subscriber can receive all DTO tagged messages.")
   public Boolean isDtoReceiveOverrideEnabled() {
     return dtoReceiveOverrideEnabled;
   }
@@ -298,7 +290,7 @@ public class MsgVpnJndiConnectionFactory {
    * The priority for receiving deliver-to-one (DTO) messages by the Subscriber (Consumer) if the messages are published on the local broker that the Subscriber is directly connected to.
    * @return dtoReceiveSubscriberLocalPriority
   **/
-  @ApiModelProperty(value = "The priority for receiving deliver-to-one (DTO) messages by the Subscriber (Consumer) if the messages are published on the local broker that the Subscriber is directly connected to.")
+  @Schema(description = "The priority for receiving deliver-to-one (DTO) messages by the Subscriber (Consumer) if the messages are published on the local broker that the Subscriber is directly connected to.")
   public Integer getDtoReceiveSubscriberLocalPriority() {
     return dtoReceiveSubscriberLocalPriority;
   }
@@ -316,7 +308,7 @@ public class MsgVpnJndiConnectionFactory {
    * The priority for receiving deliver-to-one (DTO) messages by the Subscriber (Consumer) if the messages are published on a remote broker.
    * @return dtoReceiveSubscriberNetworkPriority
   **/
-  @ApiModelProperty(value = "The priority for receiving deliver-to-one (DTO) messages by the Subscriber (Consumer) if the messages are published on a remote broker.")
+  @Schema(description = "The priority for receiving deliver-to-one (DTO) messages by the Subscriber (Consumer) if the messages are published on a remote broker.")
   public Integer getDtoReceiveSubscriberNetworkPriority() {
     return dtoReceiveSubscriberNetworkPriority;
   }
@@ -334,7 +326,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether the deliver-to-one (DTO) property is enabled on messages sent by the Publisher (Producer).
    * @return dtoSendEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the deliver-to-one (DTO) property is enabled on messages sent by the Publisher (Producer).")
+  @Schema(description = "Indicates whether the deliver-to-one (DTO) property is enabled on messages sent by the Publisher (Producer).")
   public Boolean isDtoSendEnabled() {
     return dtoSendEnabled;
   }
@@ -352,7 +344,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether a durable endpoint will be dynamically created on the broker when the client calls \&quot;Session.createDurableSubscriber()\&quot; or \&quot;Session.createQueue()\&quot;. The created endpoint respects the message time-to-live (TTL) according to the \&quot;dynamicEndpointRespectTtlEnabled\&quot; property.
    * @return dynamicEndpointCreateDurableEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether a durable endpoint will be dynamically created on the broker when the client calls \"Session.createDurableSubscriber()\" or \"Session.createQueue()\". The created endpoint respects the message time-to-live (TTL) according to the \"dynamicEndpointRespectTtlEnabled\" property.")
+  @Schema(description = "Indicates whether a durable endpoint will be dynamically created on the broker when the client calls \"Session.createDurableSubscriber()\" or \"Session.createQueue()\". The created endpoint respects the message time-to-live (TTL) according to the \"dynamicEndpointRespectTtlEnabled\" property.")
   public Boolean isDynamicEndpointCreateDurableEnabled() {
     return dynamicEndpointCreateDurableEnabled;
   }
@@ -370,7 +362,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether dynamically created durable and non-durable endpoints respect the message time-to-live (TTL) property.
    * @return dynamicEndpointRespectTtlEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether dynamically created durable and non-durable endpoints respect the message time-to-live (TTL) property.")
+  @Schema(description = "Indicates whether dynamically created durable and non-durable endpoints respect the message time-to-live (TTL) property.")
   public Boolean isDynamicEndpointRespectTtlEnabled() {
     return dynamicEndpointRespectTtlEnabled;
   }
@@ -388,7 +380,7 @@ public class MsgVpnJndiConnectionFactory {
    * The timeout for sending the acknowledgement (ACK) for guaranteed messages received by the Subscriber (Consumer), in milliseconds.
    * @return guaranteedReceiveAckTimeout
   **/
-  @ApiModelProperty(value = "The timeout for sending the acknowledgement (ACK) for guaranteed messages received by the Subscriber (Consumer), in milliseconds.")
+  @Schema(description = "The timeout for sending the acknowledgement (ACK) for guaranteed messages received by the Subscriber (Consumer), in milliseconds.")
   public Integer getGuaranteedReceiveAckTimeout() {
     return guaranteedReceiveAckTimeout;
   }
@@ -406,7 +398,7 @@ public class MsgVpnJndiConnectionFactory {
    * The maximum number of attempts to reconnect to the host or list of hosts after the guaranteed  messaging connection has been lost. The value \&quot;-1\&quot; means to retry forever. Available since 2.14.
    * @return guaranteedReceiveReconnectRetryCount
   **/
-  @ApiModelProperty(value = "The maximum number of attempts to reconnect to the host or list of hosts after the guaranteed  messaging connection has been lost. The value \"-1\" means to retry forever. Available since 2.14.")
+  @Schema(description = "The maximum number of attempts to reconnect to the host or list of hosts after the guaranteed  messaging connection has been lost. The value \"-1\" means to retry forever. Available since 2.14.")
   public Integer getGuaranteedReceiveReconnectRetryCount() {
     return guaranteedReceiveReconnectRetryCount;
   }
@@ -424,7 +416,7 @@ public class MsgVpnJndiConnectionFactory {
    * The amount of time to wait before making another attempt to connect or reconnect to the host after the guaranteed messaging connection has been lost, in milliseconds. Available since 2.14.
    * @return guaranteedReceiveReconnectRetryWait
   **/
-  @ApiModelProperty(value = "The amount of time to wait before making another attempt to connect or reconnect to the host after the guaranteed messaging connection has been lost, in milliseconds. Available since 2.14.")
+  @Schema(description = "The amount of time to wait before making another attempt to connect or reconnect to the host after the guaranteed messaging connection has been lost, in milliseconds. Available since 2.14.")
   public Integer getGuaranteedReceiveReconnectRetryWait() {
     return guaranteedReceiveReconnectRetryWait;
   }
@@ -442,7 +434,7 @@ public class MsgVpnJndiConnectionFactory {
    * The size of the window for guaranteed messages received by the Subscriber (Consumer), in messages.
    * @return guaranteedReceiveWindowSize
   **/
-  @ApiModelProperty(value = "The size of the window for guaranteed messages received by the Subscriber (Consumer), in messages.")
+  @Schema(description = "The size of the window for guaranteed messages received by the Subscriber (Consumer), in messages.")
   public Integer getGuaranteedReceiveWindowSize() {
     return guaranteedReceiveWindowSize;
   }
@@ -460,7 +452,7 @@ public class MsgVpnJndiConnectionFactory {
    * The threshold for sending the acknowledgement (ACK) for guaranteed messages received by the Subscriber (Consumer) as a percentage of &#x60;guaranteedReceiveWindowSize&#x60;.
    * @return guaranteedReceiveWindowSizeAckThreshold
   **/
-  @ApiModelProperty(value = "The threshold for sending the acknowledgement (ACK) for guaranteed messages received by the Subscriber (Consumer) as a percentage of `guaranteedReceiveWindowSize`.")
+  @Schema(description = "The threshold for sending the acknowledgement (ACK) for guaranteed messages received by the Subscriber (Consumer) as a percentage of `guaranteedReceiveWindowSize`.")
   public Integer getGuaranteedReceiveWindowSizeAckThreshold() {
     return guaranteedReceiveWindowSizeAckThreshold;
   }
@@ -478,7 +470,7 @@ public class MsgVpnJndiConnectionFactory {
    * The timeout for receiving the acknowledgement (ACK) for guaranteed messages sent by the Publisher (Producer), in milliseconds.
    * @return guaranteedSendAckTimeout
   **/
-  @ApiModelProperty(value = "The timeout for receiving the acknowledgement (ACK) for guaranteed messages sent by the Publisher (Producer), in milliseconds.")
+  @Schema(description = "The timeout for receiving the acknowledgement (ACK) for guaranteed messages sent by the Publisher (Producer), in milliseconds.")
   public Integer getGuaranteedSendAckTimeout() {
     return guaranteedSendAckTimeout;
   }
@@ -496,7 +488,7 @@ public class MsgVpnJndiConnectionFactory {
    * The size of the window for non-persistent guaranteed messages sent by the Publisher (Producer), in messages. For persistent messages the window size is fixed at 1.
    * @return guaranteedSendWindowSize
   **/
-  @ApiModelProperty(value = "The size of the window for non-persistent guaranteed messages sent by the Publisher (Producer), in messages. For persistent messages the window size is fixed at 1.")
+  @Schema(description = "The size of the window for non-persistent guaranteed messages sent by the Publisher (Producer), in messages. For persistent messages the window size is fixed at 1.")
   public Integer getGuaranteedSendWindowSize() {
     return guaranteedSendWindowSize;
   }
@@ -514,7 +506,7 @@ public class MsgVpnJndiConnectionFactory {
    * The default delivery mode for messages sent by the Publisher (Producer). The allowed values and their meaning are:  &lt;pre&gt; \&quot;persistent\&quot; - The broker spools messages (persists in the Message Spool) as part of the send operation. \&quot;non-persistent\&quot; - The broker does not spool messages (does not persist in the Message Spool) as part of the send operation. &lt;/pre&gt; 
    * @return messagingDefaultDeliveryMode
   **/
-  @ApiModelProperty(value = "The default delivery mode for messages sent by the Publisher (Producer). The allowed values and their meaning are:  <pre> \"persistent\" - The broker spools messages (persists in the Message Spool) as part of the send operation. \"non-persistent\" - The broker does not spool messages (does not persist in the Message Spool) as part of the send operation. </pre> ")
+  @Schema(description = "The default delivery mode for messages sent by the Publisher (Producer). The allowed values and their meaning are:  <pre> \"persistent\" - The broker spools messages (persists in the Message Spool) as part of the send operation. \"non-persistent\" - The broker does not spool messages (does not persist in the Message Spool) as part of the send operation. </pre> ")
   public MessagingDefaultDeliveryModeEnum getMessagingDefaultDeliveryMode() {
     return messagingDefaultDeliveryMode;
   }
@@ -532,7 +524,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether messages sent by the Publisher (Producer) are Dead Message Queue (DMQ) eligible by default.
    * @return messagingDefaultDmqEligibleEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether messages sent by the Publisher (Producer) are Dead Message Queue (DMQ) eligible by default.")
+  @Schema(description = "Indicates whether messages sent by the Publisher (Producer) are Dead Message Queue (DMQ) eligible by default.")
   public Boolean isMessagingDefaultDmqEligibleEnabled() {
     return messagingDefaultDmqEligibleEnabled;
   }
@@ -550,7 +542,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether messages sent by the Publisher (Producer) are Eliding eligible by default.
    * @return messagingDefaultElidingEligibleEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether messages sent by the Publisher (Producer) are Eliding eligible by default.")
+  @Schema(description = "Indicates whether messages sent by the Publisher (Producer) are Eliding eligible by default.")
   public Boolean isMessagingDefaultElidingEligibleEnabled() {
     return messagingDefaultElidingEligibleEnabled;
   }
@@ -568,7 +560,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether to include (add or replace) the JMSXUserID property in messages sent by the Publisher (Producer).
    * @return messagingJmsxUserIdEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether to include (add or replace) the JMSXUserID property in messages sent by the Publisher (Producer).")
+  @Schema(description = "Indicates whether to include (add or replace) the JMSXUserID property in messages sent by the Publisher (Producer).")
   public Boolean isMessagingJmsxUserIdEnabled() {
     return messagingJmsxUserIdEnabled;
   }
@@ -586,7 +578,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether encoding of JMS text messages in Publisher (Producer) messages is as XML payload. When disabled, JMS text messages are encoded as a binary attachment.
    * @return messagingTextInXmlPayloadEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether encoding of JMS text messages in Publisher (Producer) messages is as XML payload. When disabled, JMS text messages are encoded as a binary attachment.")
+  @Schema(description = "Indicates whether encoding of JMS text messages in Publisher (Producer) messages is as XML payload. When disabled, JMS text messages are encoded as a binary attachment.")
   public Boolean isMessagingTextInXmlPayloadEnabled() {
     return messagingTextInXmlPayloadEnabled;
   }
@@ -604,7 +596,7 @@ public class MsgVpnJndiConnectionFactory {
    * The name of the Message VPN.
    * @return msgVpnName
   **/
-  @ApiModelProperty(value = "The name of the Message VPN.")
+  @Schema(description = "The name of the Message VPN.")
   public String getMsgVpnName() {
     return msgVpnName;
   }
@@ -622,7 +614,7 @@ public class MsgVpnJndiConnectionFactory {
    * The ZLIB compression level for the connection to the broker. The value \&quot;0\&quot; means no compression, and the value \&quot;-1\&quot; means the compression level is specified in the JNDI Properties file.
    * @return transportCompressionLevel
   **/
-  @ApiModelProperty(value = "The ZLIB compression level for the connection to the broker. The value \"0\" means no compression, and the value \"-1\" means the compression level is specified in the JNDI Properties file.")
+  @Schema(description = "The ZLIB compression level for the connection to the broker. The value \"0\" means no compression, and the value \"-1\" means the compression level is specified in the JNDI Properties file.")
   public Integer getTransportCompressionLevel() {
     return transportCompressionLevel;
   }
@@ -640,7 +632,7 @@ public class MsgVpnJndiConnectionFactory {
    * The maximum number of retry attempts to establish an initial connection to the host or list of hosts. The value \&quot;0\&quot; means a single attempt (no retries), and the value \&quot;-1\&quot; means to retry forever.
    * @return transportConnectRetryCount
   **/
-  @ApiModelProperty(value = "The maximum number of retry attempts to establish an initial connection to the host or list of hosts. The value \"0\" means a single attempt (no retries), and the value \"-1\" means to retry forever.")
+  @Schema(description = "The maximum number of retry attempts to establish an initial connection to the host or list of hosts. The value \"0\" means a single attempt (no retries), and the value \"-1\" means to retry forever.")
   public Integer getTransportConnectRetryCount() {
     return transportConnectRetryCount;
   }
@@ -658,7 +650,7 @@ public class MsgVpnJndiConnectionFactory {
    * The maximum number of retry attempts to establish an initial connection to each host on the list of hosts. The value \&quot;0\&quot; means a single attempt (no retries), and the value \&quot;-1\&quot; means to retry forever.
    * @return transportConnectRetryPerHostCount
   **/
-  @ApiModelProperty(value = "The maximum number of retry attempts to establish an initial connection to each host on the list of hosts. The value \"0\" means a single attempt (no retries), and the value \"-1\" means to retry forever.")
+  @Schema(description = "The maximum number of retry attempts to establish an initial connection to each host on the list of hosts. The value \"0\" means a single attempt (no retries), and the value \"-1\" means to retry forever.")
   public Integer getTransportConnectRetryPerHostCount() {
     return transportConnectRetryPerHostCount;
   }
@@ -676,7 +668,7 @@ public class MsgVpnJndiConnectionFactory {
    * The timeout for establishing an initial connection to the broker, in milliseconds.
    * @return transportConnectTimeout
   **/
-  @ApiModelProperty(value = "The timeout for establishing an initial connection to the broker, in milliseconds.")
+  @Schema(description = "The timeout for establishing an initial connection to the broker, in milliseconds.")
   public Integer getTransportConnectTimeout() {
     return transportConnectTimeout;
   }
@@ -694,7 +686,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether usage of the Direct Transport mode for sending non-persistent messages is enabled. When disabled, the Guaranteed Transport mode is used.
    * @return transportDirectTransportEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether usage of the Direct Transport mode for sending non-persistent messages is enabled. When disabled, the Guaranteed Transport mode is used.")
+  @Schema(description = "Indicates whether usage of the Direct Transport mode for sending non-persistent messages is enabled. When disabled, the Guaranteed Transport mode is used.")
   public Boolean isTransportDirectTransportEnabled() {
     return transportDirectTransportEnabled;
   }
@@ -712,7 +704,7 @@ public class MsgVpnJndiConnectionFactory {
    * The maximum number of consecutive application-level keepalive messages sent without the broker response before the connection to the broker is closed.
    * @return transportKeepaliveCount
   **/
-  @ApiModelProperty(value = "The maximum number of consecutive application-level keepalive messages sent without the broker response before the connection to the broker is closed.")
+  @Schema(description = "The maximum number of consecutive application-level keepalive messages sent without the broker response before the connection to the broker is closed.")
   public Integer getTransportKeepaliveCount() {
     return transportKeepaliveCount;
   }
@@ -730,7 +722,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether application-level keepalive messages are used to maintain a connection with the Router.
    * @return transportKeepaliveEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether application-level keepalive messages are used to maintain a connection with the Router.")
+  @Schema(description = "Indicates whether application-level keepalive messages are used to maintain a connection with the Router.")
   public Boolean isTransportKeepaliveEnabled() {
     return transportKeepaliveEnabled;
   }
@@ -748,7 +740,7 @@ public class MsgVpnJndiConnectionFactory {
    * The interval between application-level keepalive messages, in milliseconds.
    * @return transportKeepaliveInterval
   **/
-  @ApiModelProperty(value = "The interval between application-level keepalive messages, in milliseconds.")
+  @Schema(description = "The interval between application-level keepalive messages, in milliseconds.")
   public Integer getTransportKeepaliveInterval() {
     return transportKeepaliveInterval;
   }
@@ -766,7 +758,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether delivery of asynchronous messages is done directly from the I/O thread.
    * @return transportMsgCallbackOnIoThreadEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether delivery of asynchronous messages is done directly from the I/O thread.")
+  @Schema(description = "Indicates whether delivery of asynchronous messages is done directly from the I/O thread.")
   public Boolean isTransportMsgCallbackOnIoThreadEnabled() {
     return transportMsgCallbackOnIoThreadEnabled;
   }
@@ -784,7 +776,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether optimization for the Direct Transport delivery mode is enabled. If enabled, the client application is limited to one Publisher (Producer) and one non-durable Subscriber (Consumer).
    * @return transportOptimizeDirectEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether optimization for the Direct Transport delivery mode is enabled. If enabled, the client application is limited to one Publisher (Producer) and one non-durable Subscriber (Consumer).")
+  @Schema(description = "Indicates whether optimization for the Direct Transport delivery mode is enabled. If enabled, the client application is limited to one Publisher (Producer) and one non-durable Subscriber (Consumer).")
   public Boolean isTransportOptimizeDirectEnabled() {
     return transportOptimizeDirectEnabled;
   }
@@ -802,7 +794,7 @@ public class MsgVpnJndiConnectionFactory {
    * The connection port number on the broker for SMF clients. The value \&quot;-1\&quot; means the port is specified in the JNDI Properties file.
    * @return transportPort
   **/
-  @ApiModelProperty(value = "The connection port number on the broker for SMF clients. The value \"-1\" means the port is specified in the JNDI Properties file.")
+  @Schema(description = "The connection port number on the broker for SMF clients. The value \"-1\" means the port is specified in the JNDI Properties file.")
   public Integer getTransportPort() {
     return transportPort;
   }
@@ -820,7 +812,7 @@ public class MsgVpnJndiConnectionFactory {
    * The timeout for reading a reply from the broker, in milliseconds.
    * @return transportReadTimeout
   **/
-  @ApiModelProperty(value = "The timeout for reading a reply from the broker, in milliseconds.")
+  @Schema(description = "The timeout for reading a reply from the broker, in milliseconds.")
   public Integer getTransportReadTimeout() {
     return transportReadTimeout;
   }
@@ -838,7 +830,7 @@ public class MsgVpnJndiConnectionFactory {
    * The size of the receive socket buffer, in bytes. It corresponds to the SO_RCVBUF socket option.
    * @return transportReceiveBufferSize
   **/
-  @ApiModelProperty(value = "The size of the receive socket buffer, in bytes. It corresponds to the SO_RCVBUF socket option.")
+  @Schema(description = "The size of the receive socket buffer, in bytes. It corresponds to the SO_RCVBUF socket option.")
   public Integer getTransportReceiveBufferSize() {
     return transportReceiveBufferSize;
   }
@@ -856,7 +848,7 @@ public class MsgVpnJndiConnectionFactory {
    * The maximum number of attempts to reconnect to the host or list of hosts after the connection has been lost. The value \&quot;-1\&quot; means to retry forever.
    * @return transportReconnectRetryCount
   **/
-  @ApiModelProperty(value = "The maximum number of attempts to reconnect to the host or list of hosts after the connection has been lost. The value \"-1\" means to retry forever.")
+  @Schema(description = "The maximum number of attempts to reconnect to the host or list of hosts after the connection has been lost. The value \"-1\" means to retry forever.")
   public Integer getTransportReconnectRetryCount() {
     return transportReconnectRetryCount;
   }
@@ -874,7 +866,7 @@ public class MsgVpnJndiConnectionFactory {
    * The amount of time before making another attempt to connect or reconnect to the host after the connection has been lost, in milliseconds.
    * @return transportReconnectRetryWait
   **/
-  @ApiModelProperty(value = "The amount of time before making another attempt to connect or reconnect to the host after the connection has been lost, in milliseconds.")
+  @Schema(description = "The amount of time before making another attempt to connect or reconnect to the host after the connection has been lost, in milliseconds.")
   public Integer getTransportReconnectRetryWait() {
     return transportReconnectRetryWait;
   }
@@ -892,7 +884,7 @@ public class MsgVpnJndiConnectionFactory {
    * The size of the send socket buffer, in bytes. It corresponds to the SO_SNDBUF socket option.
    * @return transportSendBufferSize
   **/
-  @ApiModelProperty(value = "The size of the send socket buffer, in bytes. It corresponds to the SO_SNDBUF socket option.")
+  @Schema(description = "The size of the send socket buffer, in bytes. It corresponds to the SO_SNDBUF socket option.")
   public Integer getTransportSendBufferSize() {
     return transportSendBufferSize;
   }
@@ -907,10 +899,10 @@ public class MsgVpnJndiConnectionFactory {
   }
 
    /**
-   * Indicates whether the TCP_NODELAY option is enabled, which disables Nagle&#39;s algorithm for TCP/IP congestion control (RFC 896).
+   * Indicates whether the TCP_NODELAY option is enabled, which disables Nagle&#x27;s algorithm for TCP/IP congestion control (RFC 896).
    * @return transportTcpNoDelayEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the TCP_NODELAY option is enabled, which disables Nagle's algorithm for TCP/IP congestion control (RFC 896).")
+  @Schema(description = "Indicates whether the TCP_NODELAY option is enabled, which disables Nagle's algorithm for TCP/IP congestion control (RFC 896).")
   public Boolean isTransportTcpNoDelayEnabled() {
     return transportTcpNoDelayEnabled;
   }
@@ -928,7 +920,7 @@ public class MsgVpnJndiConnectionFactory {
    * Indicates whether this is an XA Connection Factory. When enabled, the Connection Factory can be cast to \&quot;XAConnectionFactory\&quot;, \&quot;XAQueueConnectionFactory\&quot; or \&quot;XATopicConnectionFactory\&quot;.
    * @return xaEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether this is an XA Connection Factory. When enabled, the Connection Factory can be cast to \"XAConnectionFactory\", \"XAQueueConnectionFactory\" or \"XATopicConnectionFactory\".")
+  @Schema(description = "Indicates whether this is an XA Connection Factory. When enabled, the Connection Factory can be cast to \"XAConnectionFactory\", \"XAQueueConnectionFactory\" or \"XATopicConnectionFactory\".")
   public Boolean isXaEnabled() {
     return xaEnabled;
   }
@@ -1058,4 +1050,3 @@ public class MsgVpnJndiConnectionFactory {
   }
 
 }
-

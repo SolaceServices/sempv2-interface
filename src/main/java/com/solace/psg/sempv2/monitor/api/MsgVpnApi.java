@@ -1,8 +1,8 @@
 /*
  * SEMP (Solace Element Management Protocol)
- * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any (non-exclusively) of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written|See note 3 Write-Only|Attribute can only be written, not read| Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version|    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object|New attribute values|Object attributes and metadata|Set to default (but see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters \"q1\" and \"q2\" ; with values \"val1\" and \"val2\" respectively /SEMP/v2/monitor/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/monitor/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/monitor/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/monitor/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/monitor/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/monitor/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/monitor/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/monitor/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/monitor/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|For PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT. If the object does not exist, it is created first.    
+ * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any combination of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written.|See note 3 Write-Only|Attribute can only be written, not read, unless the attribute is also opaque|See the documentation for the opaque property Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version| Opaque|Attribute can be set or retrieved in opaque form when the `opaquePassword` query parameter is present|See the `opaquePassword` query parameter documentation    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    In the monitoring API, any non-identifying attribute may not be returned in a GET.  ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object (see note 5)|New attribute values|Object attributes and metadata|Set to default, with certain exceptions (see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters ; \"q1\" and \"q2\" with values \"val1\" and \"val2\" respectively /SEMP/v2/monitor/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/monitor/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/monitor/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/monitor/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/monitor/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/monitor/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/monitor/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/monitor/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/monitor/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ### opaquePassword  Attributes with the opaque property are also write-only and so cannot normally be retrieved in a GET. However, when a password is provided in the `opaquePassword` query parameter, attributes with the opaque property are retrieved in a GET in opaque form, encrypted with this password. The query parameter can also be used on a POST, PATCH, or PUT to set opaque attributes using opaque attribute values retrieved in a GET, so long as:  1. the same password that was used to retrieve the opaque attribute values is provided; and  2. the broker to which the request is being sent has the same major and minor SEMP version as the broker that produced the opaque attribute values.  The password provided in the query parameter must be a minimum of 8 characters and a maximum of 128 characters.  The query parameter can only be used in the configuration API, and only over HTTPS.  ## Help  Visit [our website](https://solace.com) to learn more about Solace.  You can also download the SEMP API specifications by clicking [here](https://solace.com/downloads/).  If you need additional support, please contact us at [support@solace.com](mailto:support@solace.com).  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|On a PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT, except in the following two cases: there is a mutual requires relationship with another non-write-only attribute and both attributes are absent from the request; or the attribute is also opaque and the `opaquePassword` query parameter is provided in the request. 5|On a PUT, if the object does not exist, it is created first.  
  *
- * OpenAPI spec version: 9.4
+ * OpenAPI spec version: 2.17
  * Contact: support@solace.com
  *
  * NOTE: This class is auto generated by the swagger code generator program.
@@ -10,12 +10,7 @@
  * Do not edit the class manually.
  */
 
-
 package com.solace.psg.sempv2.monitor.api;
-
-import com.google.gson.reflect.TypeToken;
-
-import java.io.IOException;
 
 import com.solace.psg.sempv2.apiclient.ApiCallback;
 import com.solace.psg.sempv2.apiclient.ApiClient;
@@ -25,6 +20,12 @@ import com.solace.psg.sempv2.apiclient.Configuration;
 import com.solace.psg.sempv2.apiclient.Pair;
 import com.solace.psg.sempv2.apiclient.ProgressRequestBody;
 import com.solace.psg.sempv2.apiclient.ProgressResponseBody;
+
+import com.google.gson.reflect.TypeToken;
+
+import java.io.IOException;
+
+
 import com.solace.psg.sempv2.monitor.model.MsgVpnAclProfileClientConnectExceptionResponse;
 import com.solace.psg.sempv2.monitor.model.MsgVpnAclProfileClientConnectExceptionsResponse;
 import com.solace.psg.sempv2.monitor.model.MsgVpnAclProfilePublishExceptionResponse;
@@ -183,7 +184,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnCall(String msgVpnName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -204,7 +205,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -224,24 +225,26 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnValidateBeforeCall(String msgVpnName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpn(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnCall(msgVpnName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a Message VPN object.
-     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x restTlsServerCertEnforceTrustedCommonNameEnabled||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return MsgVpnResponse
@@ -254,7 +257,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Message VPN object.
-     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x restTlsServerCertEnforceTrustedCommonNameEnabled||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;MsgVpnResponse&gt;
@@ -268,7 +271,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Message VPN object. (asynchronously)
-     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x restTlsServerCertEnforceTrustedCommonNameEnabled||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param callback The callback to be executed when the API call finishes
@@ -313,7 +316,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileCall(String msgVpnName, String aclProfileName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -335,7 +338,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -355,24 +358,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileValidateBeforeCall(String msgVpnName, String aclProfileName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfile(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfile(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileCall(msgVpnName, aclProfileName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -453,7 +457,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileClientConnectExceptionCall(String msgVpnName, String aclProfileName, String clientConnectExceptionAddress, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/clientConnectExceptions/{clientConnectExceptionAddress}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -476,7 +480,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -496,29 +500,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileClientConnectExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String clientConnectExceptionAddress, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileClientConnectException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileClientConnectException(Async)");
         }
-        
         // verify the required parameter 'clientConnectExceptionAddress' is set
         if (clientConnectExceptionAddress == null) {
             throw new ApiException("Missing the required parameter 'clientConnectExceptionAddress' when calling getMsgVpnAclProfileClientConnectException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileClientConnectExceptionCall(msgVpnName, aclProfileName, clientConnectExceptionAddress, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -604,7 +608,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileClientConnectExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/clientConnectExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -632,7 +636,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -652,24 +656,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileClientConnectExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileClientConnectExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileClientConnectExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileClientConnectExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -757,12 +762,10 @@ public class MsgVpnApi {
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionCall(String msgVpnName, String aclProfileName, String topicSyntax, String publishExceptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/publishExceptions/{topicSyntax},{publishExceptionTopic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -786,7 +789,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -806,35 +809,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
-    @Deprecated
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String topicSyntax, String publishExceptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfilePublishException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfilePublishException(Async)");
         }
-        
         // verify the required parameter 'topicSyntax' is set
         if (topicSyntax == null) {
             throw new ApiException("Missing the required parameter 'topicSyntax' when calling getMsgVpnAclProfilePublishException(Async)");
         }
-        
         // verify the required parameter 'publishExceptionTopic' is set
         if (publishExceptionTopic == null) {
             throw new ApiException("Missing the required parameter 'publishExceptionTopic' when calling getMsgVpnAclProfilePublishException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishExceptionCall(msgVpnName, aclProfileName, topicSyntax, publishExceptionTopic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -847,9 +848,7 @@ public class MsgVpnApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return MsgVpnAclProfilePublishExceptionResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public MsgVpnAclProfilePublishExceptionResponse getMsgVpnAclProfilePublishException(String msgVpnName, String aclProfileName, String topicSyntax, String publishExceptionTopic, List<String> select) throws ApiException {
         ApiResponse<MsgVpnAclProfilePublishExceptionResponse> resp = getMsgVpnAclProfilePublishExceptionWithHttpInfo(msgVpnName, aclProfileName, topicSyntax, publishExceptionTopic, select);
         return resp.getData();
@@ -865,9 +864,7 @@ public class MsgVpnApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;MsgVpnAclProfilePublishExceptionResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public ApiResponse<MsgVpnAclProfilePublishExceptionResponse> getMsgVpnAclProfilePublishExceptionWithHttpInfo(String msgVpnName, String aclProfileName, String topicSyntax, String publishExceptionTopic, List<String> select) throws ApiException {
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishExceptionValidateBeforeCall(msgVpnName, aclProfileName, topicSyntax, publishExceptionTopic, select, null, null);
         Type localVarReturnType = new TypeToken<MsgVpnAclProfilePublishExceptionResponse>(){}.getType();
@@ -885,9 +882,7 @@ public class MsgVpnApi {
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionAsync(String msgVpnName, String aclProfileName, String topicSyntax, String publishExceptionTopic, List<String> select, final ApiCallback<MsgVpnAclProfilePublishExceptionResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
@@ -926,12 +921,10 @@ public class MsgVpnApi {
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/publishExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -959,7 +952,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -979,25 +972,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
-    @Deprecated
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfilePublishExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfilePublishExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1011,9 +1004,7 @@ public class MsgVpnApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return MsgVpnAclProfilePublishExceptionsResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public MsgVpnAclProfilePublishExceptionsResponse getMsgVpnAclProfilePublishExceptions(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select) throws ApiException {
         ApiResponse<MsgVpnAclProfilePublishExceptionsResponse> resp = getMsgVpnAclProfilePublishExceptionsWithHttpInfo(msgVpnName, aclProfileName, count, cursor, where, select);
         return resp.getData();
@@ -1030,9 +1021,7 @@ public class MsgVpnApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;MsgVpnAclProfilePublishExceptionsResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public ApiResponse<MsgVpnAclProfilePublishExceptionsResponse> getMsgVpnAclProfilePublishExceptionsWithHttpInfo(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select) throws ApiException {
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishExceptionsValidateBeforeCall(msgVpnName, aclProfileName, count, cursor, where, select, null, null);
         Type localVarReturnType = new TypeToken<MsgVpnAclProfilePublishExceptionsResponse>(){}.getType();
@@ -1051,9 +1040,7 @@ public class MsgVpnApi {
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionsAsync(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ApiCallback<MsgVpnAclProfilePublishExceptionsResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
@@ -1094,7 +1081,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishTopicExceptionCall(String msgVpnName, String aclProfileName, String publishTopicExceptionSyntax, String publishTopicException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/publishTopicExceptions/{publishTopicExceptionSyntax},{publishTopicException}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1118,7 +1105,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1138,34 +1125,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfilePublishTopicExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String publishTopicExceptionSyntax, String publishTopicException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfilePublishTopicException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfilePublishTopicException(Async)");
         }
-        
         // verify the required parameter 'publishTopicExceptionSyntax' is set
         if (publishTopicExceptionSyntax == null) {
             throw new ApiException("Missing the required parameter 'publishTopicExceptionSyntax' when calling getMsgVpnAclProfilePublishTopicException(Async)");
         }
-        
         // verify the required parameter 'publishTopicException' is set
         if (publishTopicException == null) {
             throw new ApiException("Missing the required parameter 'publishTopicException' when calling getMsgVpnAclProfilePublishTopicException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishTopicExceptionCall(msgVpnName, aclProfileName, publishTopicExceptionSyntax, publishTopicException, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1254,7 +1240,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishTopicExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/publishTopicExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1282,7 +1268,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1302,24 +1288,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfilePublishTopicExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfilePublishTopicExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfilePublishTopicExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishTopicExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1407,12 +1394,10 @@ public class MsgVpnApi {
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionCall(String msgVpnName, String aclProfileName, String topicSyntax, String subscribeExceptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeExceptions/{topicSyntax},{subscribeExceptionTopic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1436,7 +1421,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1456,35 +1441,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
-    @Deprecated
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String topicSyntax, String subscribeExceptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeException(Async)");
         }
-        
         // verify the required parameter 'topicSyntax' is set
         if (topicSyntax == null) {
             throw new ApiException("Missing the required parameter 'topicSyntax' when calling getMsgVpnAclProfileSubscribeException(Async)");
         }
-        
         // verify the required parameter 'subscribeExceptionTopic' is set
         if (subscribeExceptionTopic == null) {
             throw new ApiException("Missing the required parameter 'subscribeExceptionTopic' when calling getMsgVpnAclProfileSubscribeException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeExceptionCall(msgVpnName, aclProfileName, topicSyntax, subscribeExceptionTopic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1497,9 +1480,7 @@ public class MsgVpnApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return MsgVpnAclProfileSubscribeExceptionResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public MsgVpnAclProfileSubscribeExceptionResponse getMsgVpnAclProfileSubscribeException(String msgVpnName, String aclProfileName, String topicSyntax, String subscribeExceptionTopic, List<String> select) throws ApiException {
         ApiResponse<MsgVpnAclProfileSubscribeExceptionResponse> resp = getMsgVpnAclProfileSubscribeExceptionWithHttpInfo(msgVpnName, aclProfileName, topicSyntax, subscribeExceptionTopic, select);
         return resp.getData();
@@ -1515,9 +1496,7 @@ public class MsgVpnApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;MsgVpnAclProfileSubscribeExceptionResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public ApiResponse<MsgVpnAclProfileSubscribeExceptionResponse> getMsgVpnAclProfileSubscribeExceptionWithHttpInfo(String msgVpnName, String aclProfileName, String topicSyntax, String subscribeExceptionTopic, List<String> select) throws ApiException {
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeExceptionValidateBeforeCall(msgVpnName, aclProfileName, topicSyntax, subscribeExceptionTopic, select, null, null);
         Type localVarReturnType = new TypeToken<MsgVpnAclProfileSubscribeExceptionResponse>(){}.getType();
@@ -1535,9 +1514,7 @@ public class MsgVpnApi {
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionAsync(String msgVpnName, String aclProfileName, String topicSyntax, String subscribeExceptionTopic, List<String> select, final ApiCallback<MsgVpnAclProfileSubscribeExceptionResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
@@ -1576,12 +1553,10 @@ public class MsgVpnApi {
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1609,7 +1584,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1629,25 +1604,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
-    @Deprecated
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1661,9 +1636,7 @@ public class MsgVpnApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return MsgVpnAclProfileSubscribeExceptionsResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public MsgVpnAclProfileSubscribeExceptionsResponse getMsgVpnAclProfileSubscribeExceptions(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select) throws ApiException {
         ApiResponse<MsgVpnAclProfileSubscribeExceptionsResponse> resp = getMsgVpnAclProfileSubscribeExceptionsWithHttpInfo(msgVpnName, aclProfileName, count, cursor, where, select);
         return resp.getData();
@@ -1680,9 +1653,7 @@ public class MsgVpnApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;MsgVpnAclProfileSubscribeExceptionsResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public ApiResponse<MsgVpnAclProfileSubscribeExceptionsResponse> getMsgVpnAclProfileSubscribeExceptionsWithHttpInfo(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select) throws ApiException {
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeExceptionsValidateBeforeCall(msgVpnName, aclProfileName, count, cursor, where, select, null, null);
         Type localVarReturnType = new TypeToken<MsgVpnAclProfileSubscribeExceptionsResponse>(){}.getType();
@@ -1701,9 +1672,7 @@ public class MsgVpnApi {
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionsAsync(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ApiCallback<MsgVpnAclProfileSubscribeExceptionsResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
@@ -1744,7 +1713,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeShareNameExceptionCall(String msgVpnName, String aclProfileName, String subscribeShareNameExceptionSyntax, String subscribeShareNameException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeShareNameExceptions/{subscribeShareNameExceptionSyntax},{subscribeShareNameException}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1768,7 +1737,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1788,34 +1757,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeShareNameExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String subscribeShareNameExceptionSyntax, String subscribeShareNameException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeShareNameException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeShareNameException(Async)");
         }
-        
         // verify the required parameter 'subscribeShareNameExceptionSyntax' is set
         if (subscribeShareNameExceptionSyntax == null) {
             throw new ApiException("Missing the required parameter 'subscribeShareNameExceptionSyntax' when calling getMsgVpnAclProfileSubscribeShareNameException(Async)");
         }
-        
         // verify the required parameter 'subscribeShareNameException' is set
         if (subscribeShareNameException == null) {
             throw new ApiException("Missing the required parameter 'subscribeShareNameException' when calling getMsgVpnAclProfileSubscribeShareNameException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeShareNameExceptionCall(msgVpnName, aclProfileName, subscribeShareNameExceptionSyntax, subscribeShareNameException, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1904,7 +1872,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeShareNameExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeShareNameExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1932,7 +1900,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1952,24 +1920,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeShareNameExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeShareNameExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeShareNameExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeShareNameExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -2060,7 +2029,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeTopicExceptionCall(String msgVpnName, String aclProfileName, String subscribeTopicExceptionSyntax, String subscribeTopicException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeTopicExceptions/{subscribeTopicExceptionSyntax},{subscribeTopicException}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -2084,7 +2053,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -2104,34 +2073,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeTopicExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String subscribeTopicExceptionSyntax, String subscribeTopicException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeTopicException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeTopicException(Async)");
         }
-        
         // verify the required parameter 'subscribeTopicExceptionSyntax' is set
         if (subscribeTopicExceptionSyntax == null) {
             throw new ApiException("Missing the required parameter 'subscribeTopicExceptionSyntax' when calling getMsgVpnAclProfileSubscribeTopicException(Async)");
         }
-        
         // verify the required parameter 'subscribeTopicException' is set
         if (subscribeTopicException == null) {
             throw new ApiException("Missing the required parameter 'subscribeTopicException' when calling getMsgVpnAclProfileSubscribeTopicException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeTopicExceptionCall(msgVpnName, aclProfileName, subscribeTopicExceptionSyntax, subscribeTopicException, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -2220,7 +2188,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeTopicExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeTopicExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -2248,7 +2216,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -2268,24 +2236,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeTopicExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeTopicExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeTopicExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeTopicExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -2376,7 +2345,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfilesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -2403,7 +2372,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -2423,19 +2392,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfilesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfiles(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfilesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -2521,7 +2492,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAuthenticationOauthProviderCall(String msgVpnName, String oauthProviderName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/authenticationOauthProviders/{oauthProviderName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -2543,7 +2514,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -2563,29 +2534,30 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAuthenticationOauthProviderValidateBeforeCall(String msgVpnName, String oauthProviderName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAuthenticationOauthProvider(Async)");
         }
-        
         // verify the required parameter 'oauthProviderName' is set
         if (oauthProviderName == null) {
             throw new ApiException("Missing the required parameter 'oauthProviderName' when calling getMsgVpnAuthenticationOauthProvider(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAuthenticationOauthProviderCall(msgVpnName, oauthProviderName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get an OAuth Provider object.
-     * Get an OAuth Provider object.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get an OAuth Provider object.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param oauthProviderName The name of the OAuth Provider. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -2599,7 +2571,7 @@ public class MsgVpnApi {
 
     /**
      * Get an OAuth Provider object.
-     * Get an OAuth Provider object.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get an OAuth Provider object.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param oauthProviderName The name of the OAuth Provider. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -2614,7 +2586,7 @@ public class MsgVpnApi {
 
     /**
      * Get an OAuth Provider object. (asynchronously)
-     * Get an OAuth Provider object.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get an OAuth Provider object.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param oauthProviderName The name of the OAuth Provider. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -2662,7 +2634,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAuthenticationOauthProvidersCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/authenticationOauthProviders"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -2689,7 +2661,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -2709,24 +2681,26 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAuthenticationOauthProvidersValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAuthenticationOauthProviders(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAuthenticationOauthProvidersCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of OAuth Provider objects.
-     * Get a list of OAuth Provider objects.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get a list of OAuth Provider objects.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -2742,7 +2716,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of OAuth Provider objects.
-     * Get a list of OAuth Provider objects.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get a list of OAuth Provider objects.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -2759,7 +2733,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of OAuth Provider objects. (asynchronously)
-     * Get a list of OAuth Provider objects.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get a list of OAuth Provider objects.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -2798,7 +2772,7 @@ public class MsgVpnApi {
     /**
      * Build call for getMsgVpnAuthorizationGroup
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param authorizationGroupName The name of the LDAP Authorization Group. Special care is needed if the group name contains special characters such as &#39;#&#39;, &#39;+&#39;, &#39;;&#39;, &#39;&#x3D;&#39; as the value of the group name returned from the LDAP server might prepend those characters with &#39;\\&#39;. For example a group name called &#39;test#,lab,com&#39; will be returned from the LDAP server as &#39;test\\#,lab,com&#39;. (required)
+     * @param authorizationGroupName The name of the LDAP Authorization Group. Special care is needed if the group name contains special characters such as &#x27;#&#x27;, &#x27;+&#x27;, &#x27;;&#x27;, &#x27;&#x3D;&#x27; as the value of the group name returned from the LDAP server might prepend those characters with &#x27;\\&#x27;. For example a group name called &#x27;test#,lab,com&#x27; will be returned from the LDAP server as &#x27;test\\#,lab,com&#x27;. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
@@ -2807,7 +2781,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAuthorizationGroupCall(String msgVpnName, String authorizationGroupName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/authorizationGroups/{authorizationGroupName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -2829,7 +2803,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -2849,31 +2823,32 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAuthorizationGroupValidateBeforeCall(String msgVpnName, String authorizationGroupName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAuthorizationGroup(Async)");
         }
-        
         // verify the required parameter 'authorizationGroupName' is set
         if (authorizationGroupName == null) {
             throw new ApiException("Missing the required parameter 'authorizationGroupName' when calling getMsgVpnAuthorizationGroup(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAuthorizationGroupCall(msgVpnName, authorizationGroupName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get an LDAP Authorization Group object.
      * Get an LDAP Authorization Group object.  To use client authorization groups configured on an external LDAP server to provide client authorizations, LDAP Authorization Group objects must be created on the Message VPN that match the authorization groups provisioned on the LDAP server. These objects must be configured with the client profiles and ACL profiles that will be assigned to the clients that belong to those authorization groups. A newly created group is placed at the end of the group list which is the lowest priority.   Attribute|Identifying|Deprecated :---|:---:|:---: authorizationGroupName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param authorizationGroupName The name of the LDAP Authorization Group. Special care is needed if the group name contains special characters such as &#39;#&#39;, &#39;+&#39;, &#39;;&#39;, &#39;&#x3D;&#39; as the value of the group name returned from the LDAP server might prepend those characters with &#39;\\&#39;. For example a group name called &#39;test#,lab,com&#39; will be returned from the LDAP server as &#39;test\\#,lab,com&#39;. (required)
+     * @param authorizationGroupName The name of the LDAP Authorization Group. Special care is needed if the group name contains special characters such as &#x27;#&#x27;, &#x27;+&#x27;, &#x27;;&#x27;, &#x27;&#x3D;&#x27; as the value of the group name returned from the LDAP server might prepend those characters with &#x27;\\&#x27;. For example a group name called &#x27;test#,lab,com&#x27; will be returned from the LDAP server as &#x27;test\\#,lab,com&#x27;. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return MsgVpnAuthorizationGroupResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
@@ -2887,7 +2862,7 @@ public class MsgVpnApi {
      * Get an LDAP Authorization Group object.
      * Get an LDAP Authorization Group object.  To use client authorization groups configured on an external LDAP server to provide client authorizations, LDAP Authorization Group objects must be created on the Message VPN that match the authorization groups provisioned on the LDAP server. These objects must be configured with the client profiles and ACL profiles that will be assigned to the clients that belong to those authorization groups. A newly created group is placed at the end of the group list which is the lowest priority.   Attribute|Identifying|Deprecated :---|:---:|:---: authorizationGroupName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param authorizationGroupName The name of the LDAP Authorization Group. Special care is needed if the group name contains special characters such as &#39;#&#39;, &#39;+&#39;, &#39;;&#39;, &#39;&#x3D;&#39; as the value of the group name returned from the LDAP server might prepend those characters with &#39;\\&#39;. For example a group name called &#39;test#,lab,com&#39; will be returned from the LDAP server as &#39;test\\#,lab,com&#39;. (required)
+     * @param authorizationGroupName The name of the LDAP Authorization Group. Special care is needed if the group name contains special characters such as &#x27;#&#x27;, &#x27;+&#x27;, &#x27;;&#x27;, &#x27;&#x3D;&#x27; as the value of the group name returned from the LDAP server might prepend those characters with &#x27;\\&#x27;. For example a group name called &#x27;test#,lab,com&#x27; will be returned from the LDAP server as &#x27;test\\#,lab,com&#x27;. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;MsgVpnAuthorizationGroupResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
@@ -2902,7 +2877,7 @@ public class MsgVpnApi {
      * Get an LDAP Authorization Group object. (asynchronously)
      * Get an LDAP Authorization Group object.  To use client authorization groups configured on an external LDAP server to provide client authorizations, LDAP Authorization Group objects must be created on the Message VPN that match the authorization groups provisioned on the LDAP server. These objects must be configured with the client profiles and ACL profiles that will be assigned to the clients that belong to those authorization groups. A newly created group is placed at the end of the group list which is the lowest priority.   Attribute|Identifying|Deprecated :---|:---:|:---: authorizationGroupName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param authorizationGroupName The name of the LDAP Authorization Group. Special care is needed if the group name contains special characters such as &#39;#&#39;, &#39;+&#39;, &#39;;&#39;, &#39;&#x3D;&#39; as the value of the group name returned from the LDAP server might prepend those characters with &#39;\\&#39;. For example a group name called &#39;test#,lab,com&#39; will be returned from the LDAP server as &#39;test\\#,lab,com&#39;. (required)
+     * @param authorizationGroupName The name of the LDAP Authorization Group. Special care is needed if the group name contains special characters such as &#x27;#&#x27;, &#x27;+&#x27;, &#x27;;&#x27;, &#x27;&#x3D;&#x27; as the value of the group name returned from the LDAP server might prepend those characters with &#x27;\\&#x27;. For example a group name called &#x27;test#,lab,com&#x27; will be returned from the LDAP server as &#x27;test\\#,lab,com&#x27;. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
@@ -2948,7 +2923,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAuthorizationGroupsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/authorizationGroups"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -2975,7 +2950,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -2995,19 +2970,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAuthorizationGroupsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAuthorizationGroups(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAuthorizationGroupsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -3094,7 +3071,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3117,7 +3094,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -3137,29 +3114,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgeValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridge(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling getMsgVpnBridge(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling getMsgVpnBridge(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgeCall(msgVpnName, bridgeName, bridgeVirtualRouter, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -3244,7 +3221,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgeLocalSubscriptionCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, String localSubscriptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}/localSubscriptions/{localSubscriptionTopic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3268,7 +3245,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -3288,34 +3265,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgeLocalSubscriptionValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, String localSubscriptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridgeLocalSubscription(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling getMsgVpnBridgeLocalSubscription(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling getMsgVpnBridgeLocalSubscription(Async)");
         }
-        
         // verify the required parameter 'localSubscriptionTopic' is set
         if (localSubscriptionTopic == null) {
             throw new ApiException("Missing the required parameter 'localSubscriptionTopic' when calling getMsgVpnBridgeLocalSubscription(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgeLocalSubscriptionCall(msgVpnName, bridgeName, bridgeVirtualRouter, localSubscriptionTopic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -3405,7 +3381,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgeLocalSubscriptionsCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}/localSubscriptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3434,7 +3410,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -3454,29 +3430,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgeLocalSubscriptionsValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridgeLocalSubscriptions(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling getMsgVpnBridgeLocalSubscriptions(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling getMsgVpnBridgeLocalSubscriptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgeLocalSubscriptionsCall(msgVpnName, bridgeName, bridgeVirtualRouter, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -3572,7 +3548,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgeRemoteMsgVpnCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, String remoteMsgVpnName, String remoteMsgVpnLocation, String remoteMsgVpnInterface, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}/remoteMsgVpns/{remoteMsgVpnName},{remoteMsgVpnLocation},{remoteMsgVpnInterface}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3598,7 +3574,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -3618,44 +3594,41 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgeRemoteMsgVpnValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, String remoteMsgVpnName, String remoteMsgVpnLocation, String remoteMsgVpnInterface, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridgeRemoteMsgVpn(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling getMsgVpnBridgeRemoteMsgVpn(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling getMsgVpnBridgeRemoteMsgVpn(Async)");
         }
-        
         // verify the required parameter 'remoteMsgVpnName' is set
         if (remoteMsgVpnName == null) {
             throw new ApiException("Missing the required parameter 'remoteMsgVpnName' when calling getMsgVpnBridgeRemoteMsgVpn(Async)");
         }
-        
         // verify the required parameter 'remoteMsgVpnLocation' is set
         if (remoteMsgVpnLocation == null) {
             throw new ApiException("Missing the required parameter 'remoteMsgVpnLocation' when calling getMsgVpnBridgeRemoteMsgVpn(Async)");
         }
-        
         // verify the required parameter 'remoteMsgVpnInterface' is set
         if (remoteMsgVpnInterface == null) {
             throw new ApiException("Missing the required parameter 'remoteMsgVpnInterface' when calling getMsgVpnBridgeRemoteMsgVpn(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgeRemoteMsgVpnCall(msgVpnName, bridgeName, bridgeVirtualRouter, remoteMsgVpnName, remoteMsgVpnLocation, remoteMsgVpnInterface, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -3749,7 +3722,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgeRemoteMsgVpnsCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}/remoteMsgVpns"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3774,7 +3747,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -3794,29 +3767,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgeRemoteMsgVpnsValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridgeRemoteMsgVpns(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling getMsgVpnBridgeRemoteMsgVpns(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling getMsgVpnBridgeRemoteMsgVpns(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgeRemoteMsgVpnsCall(msgVpnName, bridgeName, bridgeVirtualRouter, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -3904,7 +3877,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgeRemoteSubscriptionCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, String remoteSubscriptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}/remoteSubscriptions/{remoteSubscriptionTopic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3928,7 +3901,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -3948,34 +3921,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgeRemoteSubscriptionValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, String remoteSubscriptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridgeRemoteSubscription(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling getMsgVpnBridgeRemoteSubscription(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling getMsgVpnBridgeRemoteSubscription(Async)");
         }
-        
         // verify the required parameter 'remoteSubscriptionTopic' is set
         if (remoteSubscriptionTopic == null) {
             throw new ApiException("Missing the required parameter 'remoteSubscriptionTopic' when calling getMsgVpnBridgeRemoteSubscription(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgeRemoteSubscriptionCall(msgVpnName, bridgeName, bridgeVirtualRouter, remoteSubscriptionTopic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -4065,7 +4037,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgeRemoteSubscriptionsCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}/remoteSubscriptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4094,7 +4066,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -4114,29 +4086,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgeRemoteSubscriptionsValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridgeRemoteSubscriptions(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling getMsgVpnBridgeRemoteSubscriptions(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling getMsgVpnBridgeRemoteSubscriptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgeRemoteSubscriptionsCall(msgVpnName, bridgeName, bridgeVirtualRouter, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -4230,7 +4202,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgeTlsTrustedCommonNameCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, String tlsTrustedCommonName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}/tlsTrustedCommonNames/{tlsTrustedCommonName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4254,7 +4226,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -4274,39 +4246,38 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgeTlsTrustedCommonNameValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, String tlsTrustedCommonName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridgeTlsTrustedCommonName(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling getMsgVpnBridgeTlsTrustedCommonName(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling getMsgVpnBridgeTlsTrustedCommonName(Async)");
         }
-        
         // verify the required parameter 'tlsTrustedCommonName' is set
         if (tlsTrustedCommonName == null) {
             throw new ApiException("Missing the required parameter 'tlsTrustedCommonName' when calling getMsgVpnBridgeTlsTrustedCommonName(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgeTlsTrustedCommonNameCall(msgVpnName, bridgeName, bridgeVirtualRouter, tlsTrustedCommonName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a Trusted Common Name object.
-     * Get a Trusted Common Name object.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#39;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Trusted Common Name object.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#x27;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
@@ -4322,7 +4293,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Trusted Common Name object.
-     * Get a Trusted Common Name object.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#39;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Trusted Common Name object.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#x27;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
@@ -4339,7 +4310,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Trusted Common Name object. (asynchronously)
-     * Get a Trusted Common Name object.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#39;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Trusted Common Name object.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#x27;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
@@ -4389,7 +4360,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgeTlsTrustedCommonNamesCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}/tlsTrustedCommonNames"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4414,7 +4385,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -4434,34 +4405,34 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgeTlsTrustedCommonNamesValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridgeTlsTrustedCommonNames(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling getMsgVpnBridgeTlsTrustedCommonNames(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling getMsgVpnBridgeTlsTrustedCommonNames(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgeTlsTrustedCommonNamesCall(msgVpnName, bridgeName, bridgeVirtualRouter, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of Trusted Common Name objects.
-     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#39;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#x27;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
@@ -4477,7 +4448,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Trusted Common Name objects.
-     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#39;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#x27;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
@@ -4494,7 +4465,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Trusted Common Name objects. (asynchronously)
-     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#39;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the Bridge are used by encrypted transports to verify the name in the certificate presented by the remote node. They must include the common name of the remote node&#x27;s server certificate or client certificate, depending upon the initiator of the connection.   Attribute|Identifying|Deprecated :---|:---:|:---: bridgeName|x| bridgeVirtualRouter|x| msgVpnName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
@@ -4544,7 +4515,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -4571,7 +4542,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -4591,19 +4562,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridges(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -4689,7 +4662,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientCall(String msgVpnName, String clientName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4711,7 +4684,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -4731,24 +4704,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientValidateBeforeCall(String msgVpnName, String clientName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClient(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClient(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientCall(msgVpnName, clientName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -4829,7 +4803,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientConnectionCall(String msgVpnName, String clientName, String clientAddress, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/connections/{clientAddress}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4852,7 +4826,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -4872,29 +4846,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientConnectionValidateBeforeCall(String msgVpnName, String clientName, String clientAddress, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientConnection(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientConnection(Async)");
         }
-        
         // verify the required parameter 'clientAddress' is set
         if (clientAddress == null) {
             throw new ApiException("Missing the required parameter 'clientAddress' when calling getMsgVpnClientConnection(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientConnectionCall(msgVpnName, clientName, clientAddress, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -4980,7 +4954,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientConnectionsCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/connections"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -5008,7 +4982,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5028,24 +5002,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientConnectionsValidateBeforeCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientConnections(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientConnections(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientConnectionsCall(msgVpnName, clientName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -5134,7 +5109,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientProfileCall(String msgVpnName, String clientProfileName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clientProfiles/{clientProfileName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -5156,7 +5131,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5176,24 +5151,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientProfileValidateBeforeCall(String msgVpnName, String clientProfileName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientProfile(Async)");
         }
-        
         // verify the required parameter 'clientProfileName' is set
         if (clientProfileName == null) {
             throw new ApiException("Missing the required parameter 'clientProfileName' when calling getMsgVpnClientProfile(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientProfileCall(msgVpnName, clientProfileName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -5275,7 +5251,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientProfilesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clientProfiles"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -5302,7 +5278,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5322,19 +5298,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientProfilesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientProfiles(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientProfilesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -5421,7 +5399,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientRxFlowCall(String msgVpnName, String clientName, String flowId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/rxFlows/{flowId}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -5444,7 +5422,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5464,29 +5442,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientRxFlowValidateBeforeCall(String msgVpnName, String clientName, String flowId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientRxFlow(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientRxFlow(Async)");
         }
-        
         // verify the required parameter 'flowId' is set
         if (flowId == null) {
             throw new ApiException("Missing the required parameter 'flowId' when calling getMsgVpnClientRxFlow(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientRxFlowCall(msgVpnName, clientName, flowId, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -5572,7 +5550,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientRxFlowsCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/rxFlows"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -5600,7 +5578,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5620,24 +5598,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientRxFlowsValidateBeforeCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientRxFlows(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientRxFlows(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientRxFlowsCall(msgVpnName, clientName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -5727,7 +5706,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientSubscriptionCall(String msgVpnName, String clientName, String subscriptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/subscriptions/{subscriptionTopic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -5750,7 +5729,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5770,29 +5749,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientSubscriptionValidateBeforeCall(String msgVpnName, String clientName, String subscriptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientSubscription(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientSubscription(Async)");
         }
-        
         // verify the required parameter 'subscriptionTopic' is set
         if (subscriptionTopic == null) {
             throw new ApiException("Missing the required parameter 'subscriptionTopic' when calling getMsgVpnClientSubscription(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientSubscriptionCall(msgVpnName, clientName, subscriptionTopic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -5878,7 +5857,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientSubscriptionsCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/subscriptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -5906,7 +5885,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5926,24 +5905,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientSubscriptionsValidateBeforeCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientSubscriptions(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientSubscriptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientSubscriptionsCall(msgVpnName, clientName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6033,7 +6013,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientTransactedSessionCall(String msgVpnName, String clientName, String sessionName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/transactedSessions/{sessionName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -6056,7 +6036,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6076,29 +6056,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientTransactedSessionValidateBeforeCall(String msgVpnName, String clientName, String sessionName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientTransactedSession(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientTransactedSession(Async)");
         }
-        
         // verify the required parameter 'sessionName' is set
         if (sessionName == null) {
             throw new ApiException("Missing the required parameter 'sessionName' when calling getMsgVpnClientTransactedSession(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientTransactedSessionCall(msgVpnName, clientName, sessionName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6184,7 +6164,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientTransactedSessionsCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/transactedSessions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -6212,7 +6192,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6232,24 +6212,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientTransactedSessionsValidateBeforeCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientTransactedSessions(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientTransactedSessions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientTransactedSessionsCall(msgVpnName, clientName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6339,7 +6320,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientTxFlowCall(String msgVpnName, String clientName, String flowId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/txFlows/{flowId}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -6362,7 +6343,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6382,29 +6363,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientTxFlowValidateBeforeCall(String msgVpnName, String clientName, String flowId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientTxFlow(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientTxFlow(Async)");
         }
-        
         // verify the required parameter 'flowId' is set
         if (flowId == null) {
             throw new ApiException("Missing the required parameter 'flowId' when calling getMsgVpnClientTxFlow(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientTxFlowCall(msgVpnName, clientName, flowId, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6490,7 +6471,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientTxFlowsCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/txFlows"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -6518,7 +6499,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6538,24 +6519,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientTxFlowsValidateBeforeCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientTxFlows(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientTxFlows(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientTxFlowsCall(msgVpnName, clientName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6644,7 +6626,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientUsernameCall(String msgVpnName, String clientUsername, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clientUsernames/{clientUsername}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -6666,7 +6648,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6686,24 +6668,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientUsernameValidateBeforeCall(String msgVpnName, String clientUsername, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientUsername(Async)");
         }
-        
         // verify the required parameter 'clientUsername' is set
         if (clientUsername == null) {
             throw new ApiException("Missing the required parameter 'clientUsername' when calling getMsgVpnClientUsername(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientUsernameCall(msgVpnName, clientUsername, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6785,7 +6768,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientUsernamesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clientUsernames"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -6812,7 +6795,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6832,19 +6815,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientUsernamesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientUsernames(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientUsernamesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6932,7 +6917,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -6959,7 +6944,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6979,19 +6964,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClients(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7077,7 +7064,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnConfigSyncRemoteNodeCall(String msgVpnName, String remoteNodeName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/configSyncRemoteNodes/{remoteNodeName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -7099,7 +7086,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7119,24 +7106,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnConfigSyncRemoteNodeValidateBeforeCall(String msgVpnName, String remoteNodeName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnConfigSyncRemoteNode(Async)");
         }
-        
         // verify the required parameter 'remoteNodeName' is set
         if (remoteNodeName == null) {
             throw new ApiException("Missing the required parameter 'remoteNodeName' when calling getMsgVpnConfigSyncRemoteNode(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnConfigSyncRemoteNodeCall(msgVpnName, remoteNodeName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7218,7 +7206,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnConfigSyncRemoteNodesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/configSyncRemoteNodes"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -7245,7 +7233,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7265,19 +7253,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnConfigSyncRemoteNodesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnConfigSyncRemoteNodes(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnConfigSyncRemoteNodesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7363,7 +7353,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheCall(String msgVpnName, String cacheName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -7385,7 +7375,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7405,24 +7395,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheValidateBeforeCall(String msgVpnName, String cacheName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCache(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCache(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheCall(msgVpnName, cacheName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7503,7 +7494,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterCall(String msgVpnName, String cacheName, String clusterName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -7526,7 +7517,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7546,29 +7537,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheCluster(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheCluster(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheCluster(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterCall(msgVpnName, cacheName, clusterName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7653,7 +7644,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterCall(String msgVpnName, String cacheName, String clusterName, String homeClusterName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/globalCachingHomeClusters/{homeClusterName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -7677,7 +7668,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7697,34 +7688,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String homeClusterName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeCluster(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeCluster(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeCluster(Async)");
         }
-        
         // verify the required parameter 'homeClusterName' is set
         if (homeClusterName == null) {
             throw new ApiException("Missing the required parameter 'homeClusterName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeCluster(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterCall(msgVpnName, cacheName, clusterName, homeClusterName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7813,7 +7803,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefixCall(String msgVpnName, String cacheName, String clusterName, String homeClusterName, String topicPrefix, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/globalCachingHomeClusters/{homeClusterName}/topicPrefixes/{topicPrefix}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -7838,7 +7828,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7858,39 +7848,37 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefixValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String homeClusterName, String topicPrefix, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefix(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefix(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefix(Async)");
         }
-        
         // verify the required parameter 'homeClusterName' is set
         if (homeClusterName == null) {
             throw new ApiException("Missing the required parameter 'homeClusterName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefix(Async)");
         }
-        
         // verify the required parameter 'topicPrefix' is set
         if (topicPrefix == null) {
             throw new ApiException("Missing the required parameter 'topicPrefix' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefix(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefixCall(msgVpnName, cacheName, clusterName, homeClusterName, topicPrefix, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7984,7 +7972,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefixesCall(String msgVpnName, String cacheName, String clusterName, String homeClusterName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/globalCachingHomeClusters/{homeClusterName}/topicPrefixes"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -8014,7 +8002,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8034,34 +8022,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefixesValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String homeClusterName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefixes(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefixes(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefixes(Async)");
         }
-        
         // verify the required parameter 'homeClusterName' is set
         if (homeClusterName == null) {
             throw new ApiException("Missing the required parameter 'homeClusterName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefixes(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterGlobalCachingHomeClusterTopicPrefixesCall(msgVpnName, cacheName, clusterName, homeClusterName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -8160,7 +8147,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterGlobalCachingHomeClustersCall(String msgVpnName, String cacheName, String clusterName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/globalCachingHomeClusters"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -8189,7 +8176,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8209,29 +8196,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterGlobalCachingHomeClustersValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusters(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusters(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterGlobalCachingHomeClusters(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterGlobalCachingHomeClustersCall(msgVpnName, cacheName, clusterName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -8325,7 +8312,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceCall(String msgVpnName, String cacheName, String clusterName, String instanceName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -8349,7 +8336,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8369,34 +8356,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterInstance(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterInstance(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterInstance(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling getMsgVpnDistributedCacheClusterInstance(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterInstanceCall(msgVpnName, cacheName, clusterName, instanceName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -8485,7 +8471,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeClusterCall(String msgVpnName, String cacheName, String clusterName, String instanceName, String homeClusterName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/remoteGlobalCachingHomeClusters/{homeClusterName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -8510,7 +8496,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8530,39 +8516,37 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeClusterValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, String homeClusterName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeCluster(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeCluster(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeCluster(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeCluster(Async)");
         }
-        
         // verify the required parameter 'homeClusterName' is set
         if (homeClusterName == null) {
             throw new ApiException("Missing the required parameter 'homeClusterName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeCluster(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeClusterCall(msgVpnName, cacheName, clusterName, instanceName, homeClusterName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -8656,7 +8640,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeClustersCall(String msgVpnName, String cacheName, String clusterName, String instanceName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/remoteGlobalCachingHomeClusters"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -8686,7 +8670,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8706,34 +8690,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeClustersValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeClusters(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeClusters(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeClusters(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeClusters(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterInstanceRemoteGlobalCachingHomeClustersCall(msgVpnName, cacheName, clusterName, instanceName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -8831,7 +8814,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceRemoteTopicCall(String msgVpnName, String cacheName, String clusterName, String instanceName, String topic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/remoteTopics/{topic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -8856,7 +8839,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8876,39 +8859,37 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceRemoteTopicValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, String topic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteTopic(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteTopic(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteTopic(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteTopic(Async)");
         }
-        
         // verify the required parameter 'topic' is set
         if (topic == null) {
             throw new ApiException("Missing the required parameter 'topic' when calling getMsgVpnDistributedCacheClusterInstanceRemoteTopic(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterInstanceRemoteTopicCall(msgVpnName, cacheName, clusterName, instanceName, topic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9002,7 +8983,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceRemoteTopicsCall(String msgVpnName, String cacheName, String clusterName, String instanceName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/remoteTopics"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -9032,7 +9013,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9052,34 +9033,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceRemoteTopicsValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteTopics(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteTopics(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteTopics(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling getMsgVpnDistributedCacheClusterInstanceRemoteTopics(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterInstanceRemoteTopicsCall(msgVpnName, cacheName, clusterName, instanceName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9178,7 +9158,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstancesCall(String msgVpnName, String cacheName, String clusterName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -9207,7 +9187,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9227,29 +9207,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstancesValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterInstances(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterInstances(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterInstances(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterInstancesCall(msgVpnName, cacheName, clusterName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9343,7 +9323,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterTopicCall(String msgVpnName, String cacheName, String clusterName, String topic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/topics/{topic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -9367,7 +9347,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9387,34 +9367,33 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterTopicValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String topic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterTopic(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterTopic(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterTopic(Async)");
         }
-        
         // verify the required parameter 'topic' is set
         if (topic == null) {
             throw new ApiException("Missing the required parameter 'topic' when calling getMsgVpnDistributedCacheClusterTopic(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterTopicCall(msgVpnName, cacheName, clusterName, topic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9504,7 +9483,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterTopicsCall(String msgVpnName, String cacheName, String clusterName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/topics"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -9533,7 +9512,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9553,29 +9532,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterTopicsValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterTopics(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterTopics(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterTopics(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterTopicsCall(msgVpnName, cacheName, clusterName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9670,7 +9649,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClustersCall(String msgVpnName, String cacheName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -9698,7 +9677,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9718,24 +9697,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClustersValidateBeforeCall(String msgVpnName, String cacheName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusters(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusters(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClustersCall(msgVpnName, cacheName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9826,7 +9806,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCachesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -9853,7 +9833,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9873,19 +9853,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCachesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCaches(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCachesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9971,7 +9953,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDmrBridgeCall(String msgVpnName, String remoteNodeName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/dmrBridges/{remoteNodeName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -9993,7 +9975,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -10013,24 +9995,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDmrBridgeValidateBeforeCall(String msgVpnName, String remoteNodeName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDmrBridge(Async)");
         }
-        
         // verify the required parameter 'remoteNodeName' is set
         if (remoteNodeName == null) {
             throw new ApiException("Missing the required parameter 'remoteNodeName' when calling getMsgVpnDmrBridge(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDmrBridgeCall(msgVpnName, remoteNodeName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -10112,7 +10095,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDmrBridgesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/dmrBridges"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -10139,7 +10122,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -10159,19 +10142,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDmrBridgesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDmrBridges(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDmrBridgesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -10259,7 +10244,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnJndiConnectionFactoriesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/jndiConnectionFactories"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -10286,7 +10271,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -10306,19 +10291,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnJndiConnectionFactoriesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnJndiConnectionFactories(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnJndiConnectionFactoriesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -10404,7 +10391,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnJndiConnectionFactoryCall(String msgVpnName, String connectionFactoryName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/jndiConnectionFactories/{connectionFactoryName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -10426,7 +10413,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -10446,24 +10433,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnJndiConnectionFactoryValidateBeforeCall(String msgVpnName, String connectionFactoryName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnJndiConnectionFactory(Async)");
         }
-        
         // verify the required parameter 'connectionFactoryName' is set
         if (connectionFactoryName == null) {
             throw new ApiException("Missing the required parameter 'connectionFactoryName' when calling getMsgVpnJndiConnectionFactory(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnJndiConnectionFactoryCall(msgVpnName, connectionFactoryName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -10543,7 +10531,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnJndiQueueCall(String msgVpnName, String queueName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/jndiQueues/{queueName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -10565,7 +10553,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -10585,24 +10573,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnJndiQueueValidateBeforeCall(String msgVpnName, String queueName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnJndiQueue(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnJndiQueue(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnJndiQueueCall(msgVpnName, queueName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -10684,7 +10673,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnJndiQueuesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/jndiQueues"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -10711,7 +10700,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -10731,19 +10720,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnJndiQueuesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnJndiQueues(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnJndiQueuesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -10829,7 +10820,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnJndiTopicCall(String msgVpnName, String topicName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/jndiTopics/{topicName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -10851,7 +10842,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -10871,24 +10862,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnJndiTopicValidateBeforeCall(String msgVpnName, String topicName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnJndiTopic(Async)");
         }
-        
         // verify the required parameter 'topicName' is set
         if (topicName == null) {
             throw new ApiException("Missing the required parameter 'topicName' when calling getMsgVpnJndiTopic(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnJndiTopicCall(msgVpnName, topicName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -10970,7 +10962,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnJndiTopicsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/jndiTopics"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -10997,7 +10989,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -11017,19 +11009,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnJndiTopicsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnJndiTopics(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnJndiTopicsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -11115,7 +11109,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnMqttRetainCacheCall(String msgVpnName, String cacheName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/mqttRetainCaches/{cacheName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -11137,7 +11131,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -11157,29 +11151,30 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnMqttRetainCacheValidateBeforeCall(String msgVpnName, String cacheName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnMqttRetainCache(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnMqttRetainCache(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnMqttRetainCacheCall(msgVpnName, cacheName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get an MQTT Retain Cache object.
-     * Get an MQTT Retain Cache object.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#39;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get an MQTT Retain Cache object.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#x27;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the MQTT Retain Cache. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -11193,7 +11188,7 @@ public class MsgVpnApi {
 
     /**
      * Get an MQTT Retain Cache object.
-     * Get an MQTT Retain Cache object.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#39;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get an MQTT Retain Cache object.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#x27;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the MQTT Retain Cache. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -11208,7 +11203,7 @@ public class MsgVpnApi {
 
     /**
      * Get an MQTT Retain Cache object. (asynchronously)
-     * Get an MQTT Retain Cache object.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#39;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get an MQTT Retain Cache object.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#x27;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the MQTT Retain Cache. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -11256,7 +11251,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnMqttRetainCachesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/mqttRetainCaches"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -11283,7 +11278,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -11303,24 +11298,26 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnMqttRetainCachesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnMqttRetainCaches(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnMqttRetainCachesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of MQTT Retain Cache objects.
-     * Get a list of MQTT Retain Cache objects.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#39;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of MQTT Retain Cache objects.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#x27;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -11336,7 +11333,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of MQTT Retain Cache objects.
-     * Get a list of MQTT Retain Cache objects.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#39;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of MQTT Retain Cache objects.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#x27;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -11353,7 +11350,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of MQTT Retain Cache objects. (asynchronously)
-     * Get a list of MQTT Retain Cache objects.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#39;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of MQTT Retain Cache objects.  Using MQTT retained messages allows publishing MQTT clients to indicate that a message must be stored for later delivery to subscribing clients when those subscribing clients add subscriptions matching the retained message&#x27;s topic. An MQTT Retain Cache processes all retained messages for a Message VPN.   Attribute|Identifying|Deprecated :---|:---:|:---: cacheName|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -11402,7 +11399,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnMqttSessionCall(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/mqttSessions/{mqttSessionClientId},{mqttSessionVirtualRouter}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -11425,7 +11422,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -11445,34 +11442,34 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnMqttSessionValidateBeforeCall(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnMqttSession(Async)");
         }
-        
         // verify the required parameter 'mqttSessionClientId' is set
         if (mqttSessionClientId == null) {
             throw new ApiException("Missing the required parameter 'mqttSessionClientId' when calling getMsgVpnMqttSession(Async)");
         }
-        
         // verify the required parameter 'mqttSessionVirtualRouter' is set
         if (mqttSessionVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'mqttSessionVirtualRouter' when calling getMsgVpnMqttSession(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnMqttSessionCall(msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get an MQTT Session object.
-     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -11487,7 +11484,7 @@ public class MsgVpnApi {
 
     /**
      * Get an MQTT Session object.
-     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -11503,7 +11500,7 @@ public class MsgVpnApi {
 
     /**
      * Get an MQTT Session object. (asynchronously)
-     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -11552,7 +11549,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnMqttSessionSubscriptionCall(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, String subscriptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/mqttSessions/{mqttSessionClientId},{mqttSessionVirtualRouter}/subscriptions/{subscriptionTopic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -11576,7 +11573,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -11596,39 +11593,38 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnMqttSessionSubscriptionValidateBeforeCall(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, String subscriptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnMqttSessionSubscription(Async)");
         }
-        
         // verify the required parameter 'mqttSessionClientId' is set
         if (mqttSessionClientId == null) {
             throw new ApiException("Missing the required parameter 'mqttSessionClientId' when calling getMsgVpnMqttSessionSubscription(Async)");
         }
-        
         // verify the required parameter 'mqttSessionVirtualRouter' is set
         if (mqttSessionVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'mqttSessionVirtualRouter' when calling getMsgVpnMqttSessionSubscription(Async)");
         }
-        
         // verify the required parameter 'subscriptionTopic' is set
         if (subscriptionTopic == null) {
             throw new ApiException("Missing the required parameter 'subscriptionTopic' when calling getMsgVpnMqttSessionSubscription(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnMqttSessionSubscriptionCall(msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter, subscriptionTopic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a Subscription object.
-     * Get a Subscription object.  An MQTT session contains a client&#39;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Subscription object.  An MQTT session contains a client&#x27;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -11644,7 +11640,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Subscription object.
-     * Get a Subscription object.  An MQTT session contains a client&#39;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Subscription object.  An MQTT session contains a client&#x27;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -11661,7 +11657,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Subscription object. (asynchronously)
-     * Get a Subscription object.  An MQTT session contains a client&#39;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Subscription object.  An MQTT session contains a client&#x27;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -11713,7 +11709,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnMqttSessionSubscriptionsCall(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/mqttSessions/{mqttSessionClientId},{mqttSessionVirtualRouter}/subscriptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -11742,7 +11738,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -11762,34 +11758,34 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnMqttSessionSubscriptionsValidateBeforeCall(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnMqttSessionSubscriptions(Async)");
         }
-        
         // verify the required parameter 'mqttSessionClientId' is set
         if (mqttSessionClientId == null) {
             throw new ApiException("Missing the required parameter 'mqttSessionClientId' when calling getMsgVpnMqttSessionSubscriptions(Async)");
         }
-        
         // verify the required parameter 'mqttSessionVirtualRouter' is set
         if (mqttSessionVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'mqttSessionVirtualRouter' when calling getMsgVpnMqttSessionSubscriptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnMqttSessionSubscriptionsCall(msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of Subscription objects.
-     * Get a list of Subscription objects.  An MQTT session contains a client&#39;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Subscription objects.  An MQTT session contains a client&#x27;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -11807,7 +11803,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Subscription objects.
-     * Get a list of Subscription objects.  An MQTT session contains a client&#39;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Subscription objects.  An MQTT session contains a client&#x27;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -11826,7 +11822,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Subscription objects. (asynchronously)
-     * Get a list of Subscription objects.  An MQTT session contains a client&#39;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Subscription objects.  An MQTT session contains a client&#x27;s QoS 0 and QoS 1 subscription sets. On creation, a subscription defaults to QoS 0.   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x| subscriptionTopic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -11878,7 +11874,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnMqttSessionsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/mqttSessions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -11905,7 +11901,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -11925,24 +11921,26 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnMqttSessionsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnMqttSessions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnMqttSessionsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of MQTT Session objects.
-     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -11958,7 +11956,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of MQTT Session objects.
-     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -11975,7 +11973,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of MQTT Session objects. (asynchronously)
-     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: counter.mqttConnackErrorTxCount||x counter.mqttConnackTxCount||x counter.mqttConnectRxCount||x counter.mqttDisconnectRxCount||x counter.mqttPubcompTxCount||x counter.mqttPublishQos0RxCount||x counter.mqttPublishQos0TxCount||x counter.mqttPublishQos1RxCount||x counter.mqttPublishQos1TxCount||x counter.mqttPublishQos2RxCount||x counter.mqttPubrecTxCount||x counter.mqttPubrelRxCount||x mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -12023,7 +12021,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueCall(String msgVpnName, String queueName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -12045,7 +12043,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -12065,24 +12063,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueValidateBeforeCall(String msgVpnName, String queueName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueue(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueue(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueCall(msgVpnName, queueName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -12163,7 +12162,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueMsgCall(String msgVpnName, String queueName, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/msgs/{msgId}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -12186,7 +12185,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -12206,29 +12205,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueMsgValidateBeforeCall(String msgVpnName, String queueName, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueueMsg(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueueMsg(Async)");
         }
-        
         // verify the required parameter 'msgId' is set
         if (msgId == null) {
             throw new ApiException("Missing the required parameter 'msgId' when calling getMsgVpnQueueMsg(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueMsgCall(msgVpnName, queueName, msgId, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -12314,7 +12313,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueMsgsCall(String msgVpnName, String queueName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/msgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -12342,7 +12341,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -12362,24 +12361,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueMsgsValidateBeforeCall(String msgVpnName, String queueName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueueMsgs(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueueMsgs(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueMsgsCall(msgVpnName, queueName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -12471,7 +12471,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueuePrioritiesCall(String msgVpnName, String queueName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/priorities"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -12499,7 +12499,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -12519,24 +12519,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueuePrioritiesValidateBeforeCall(String msgVpnName, String queueName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueuePriorities(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueuePriorities(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueuePrioritiesCall(msgVpnName, queueName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -12626,7 +12627,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueuePriorityCall(String msgVpnName, String queueName, String priority, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/priorities/{priority}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -12649,7 +12650,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -12669,29 +12670,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueuePriorityValidateBeforeCall(String msgVpnName, String queueName, String priority, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueuePriority(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueuePriority(Async)");
         }
-        
         // verify the required parameter 'priority' is set
         if (priority == null) {
             throw new ApiException("Missing the required parameter 'priority' when calling getMsgVpnQueuePriority(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueuePriorityCall(msgVpnName, queueName, priority, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -12775,7 +12776,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueSubscriptionCall(String msgVpnName, String queueName, String subscriptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/subscriptions/{subscriptionTopic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -12798,7 +12799,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -12818,29 +12819,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueSubscriptionValidateBeforeCall(String msgVpnName, String queueName, String subscriptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueueSubscription(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueueSubscription(Async)");
         }
-        
         // verify the required parameter 'subscriptionTopic' is set
         if (subscriptionTopic == null) {
             throw new ApiException("Missing the required parameter 'subscriptionTopic' when calling getMsgVpnQueueSubscription(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueSubscriptionCall(msgVpnName, queueName, subscriptionTopic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -12926,7 +12927,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueSubscriptionsCall(String msgVpnName, String queueName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/subscriptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -12954,7 +12955,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -12974,24 +12975,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueSubscriptionsValidateBeforeCall(String msgVpnName, String queueName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueueSubscriptions(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueueSubscriptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueSubscriptionsCall(msgVpnName, queueName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -13080,7 +13082,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueTemplateCall(String msgVpnName, String queueTemplateName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queueTemplates/{queueTemplateName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -13102,7 +13104,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -13122,24 +13124,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueTemplateValidateBeforeCall(String msgVpnName, String queueTemplateName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueueTemplate(Async)");
         }
-        
         // verify the required parameter 'queueTemplateName' is set
         if (queueTemplateName == null) {
             throw new ApiException("Missing the required parameter 'queueTemplateName' when calling getMsgVpnQueueTemplate(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueTemplateCall(msgVpnName, queueTemplateName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -13221,7 +13224,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueTemplatesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queueTemplates"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -13248,7 +13251,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -13268,19 +13271,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueTemplatesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueueTemplates(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueTemplatesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -13367,7 +13372,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueTxFlowCall(String msgVpnName, String queueName, String flowId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/txFlows/{flowId}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -13390,7 +13395,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -13410,29 +13415,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueTxFlowValidateBeforeCall(String msgVpnName, String queueName, String flowId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueueTxFlow(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueueTxFlow(Async)");
         }
-        
         // verify the required parameter 'flowId' is set
         if (flowId == null) {
             throw new ApiException("Missing the required parameter 'flowId' when calling getMsgVpnQueueTxFlow(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueTxFlowCall(msgVpnName, queueName, flowId, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -13518,7 +13523,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueTxFlowsCall(String msgVpnName, String queueName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/txFlows"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -13546,7 +13551,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -13566,24 +13571,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueTxFlowsValidateBeforeCall(String msgVpnName, String queueName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueueTxFlows(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueueTxFlows(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueTxFlowsCall(msgVpnName, queueName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -13674,7 +13680,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueuesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -13701,7 +13707,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -13721,19 +13727,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueuesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueues(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueuesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -13819,7 +13827,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnReplayLogCall(String msgVpnName, String replayLogName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/replayLogs/{replayLogName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -13841,7 +13849,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -13861,29 +13869,30 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnReplayLogValidateBeforeCall(String msgVpnName, String replayLogName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnReplayLog(Async)");
         }
-        
         // verify the required parameter 'replayLogName' is set
         if (replayLogName == null) {
             throw new ApiException("Missing the required parameter 'replayLogName' when calling getMsgVpnReplayLog(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnReplayLogCall(msgVpnName, replayLogName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a Replay Log object.
-     * Get a Replay Log object.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Replay Log object.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param replayLogName The name of the Replay Log. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -13897,7 +13906,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Replay Log object.
-     * Get a Replay Log object.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Replay Log object.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param replayLogName The name of the Replay Log. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -13912,7 +13921,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Replay Log object. (asynchronously)
-     * Get a Replay Log object.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Replay Log object.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param replayLogName The name of the Replay Log. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -13959,7 +13968,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnReplayLogMsgCall(String msgVpnName, String replayLogName, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/replayLogs/{replayLogName}/msgs/{msgId}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -13982,7 +13991,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -14002,29 +14011,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnReplayLogMsgValidateBeforeCall(String msgVpnName, String replayLogName, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnReplayLogMsg(Async)");
         }
-        
         // verify the required parameter 'replayLogName' is set
         if (replayLogName == null) {
             throw new ApiException("Missing the required parameter 'replayLogName' when calling getMsgVpnReplayLogMsg(Async)");
         }
-        
         // verify the required parameter 'msgId' is set
         if (msgId == null) {
             throw new ApiException("Missing the required parameter 'msgId' when calling getMsgVpnReplayLogMsg(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnReplayLogMsgCall(msgVpnName, replayLogName, msgId, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -14110,7 +14119,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnReplayLogMsgsCall(String msgVpnName, String replayLogName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/replayLogs/{replayLogName}/msgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -14138,7 +14147,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -14158,24 +14167,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnReplayLogMsgsValidateBeforeCall(String msgVpnName, String replayLogName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnReplayLogMsgs(Async)");
         }
-        
         // verify the required parameter 'replayLogName' is set
         if (replayLogName == null) {
             throw new ApiException("Missing the required parameter 'replayLogName' when calling getMsgVpnReplayLogMsgs(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnReplayLogMsgsCall(msgVpnName, replayLogName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -14266,7 +14276,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnReplayLogsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/replayLogs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -14293,7 +14303,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -14313,24 +14323,26 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnReplayLogsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnReplayLogs(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnReplayLogsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of Replay Log objects.
-     * Get a list of Replay Log objects.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Replay Log objects.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -14346,7 +14358,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Replay Log objects.
-     * Get a list of Replay Log objects.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Replay Log objects.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -14363,7 +14375,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Replay Log objects. (asynchronously)
-     * Get a list of Replay Log objects.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Replay Log objects.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -14411,7 +14423,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnReplicatedTopicCall(String msgVpnName, String replicatedTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/replicatedTopics/{replicatedTopic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -14433,7 +14445,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -14453,24 +14465,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnReplicatedTopicValidateBeforeCall(String msgVpnName, String replicatedTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnReplicatedTopic(Async)");
         }
-        
         // verify the required parameter 'replicatedTopic' is set
         if (replicatedTopic == null) {
             throw new ApiException("Missing the required parameter 'replicatedTopic' when calling getMsgVpnReplicatedTopic(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnReplicatedTopicCall(msgVpnName, replicatedTopic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -14552,7 +14565,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnReplicatedTopicsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/replicatedTopics"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -14579,7 +14592,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -14599,19 +14612,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnReplicatedTopicsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnReplicatedTopics(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnReplicatedTopicsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -14697,7 +14712,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointCall(String msgVpnName, String restDeliveryPointName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints/{restDeliveryPointName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -14719,7 +14734,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -14739,24 +14754,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointValidateBeforeCall(String msgVpnName, String restDeliveryPointName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPoint(Async)");
         }
-        
         // verify the required parameter 'restDeliveryPointName' is set
         if (restDeliveryPointName == null) {
             throw new ApiException("Missing the required parameter 'restDeliveryPointName' when calling getMsgVpnRestDeliveryPoint(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointCall(msgVpnName, restDeliveryPointName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -14837,7 +14853,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointQueueBindingCall(String msgVpnName, String restDeliveryPointName, String queueBindingName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints/{restDeliveryPointName}/queueBindings/{queueBindingName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -14860,7 +14876,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -14880,29 +14896,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointQueueBindingValidateBeforeCall(String msgVpnName, String restDeliveryPointName, String queueBindingName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPointQueueBinding(Async)");
         }
-        
         // verify the required parameter 'restDeliveryPointName' is set
         if (restDeliveryPointName == null) {
             throw new ApiException("Missing the required parameter 'restDeliveryPointName' when calling getMsgVpnRestDeliveryPointQueueBinding(Async)");
         }
-        
         // verify the required parameter 'queueBindingName' is set
         if (queueBindingName == null) {
             throw new ApiException("Missing the required parameter 'queueBindingName' when calling getMsgVpnRestDeliveryPointQueueBinding(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointQueueBindingCall(msgVpnName, restDeliveryPointName, queueBindingName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -14988,7 +15004,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointQueueBindingsCall(String msgVpnName, String restDeliveryPointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints/{restDeliveryPointName}/queueBindings"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -15016,7 +15032,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -15036,24 +15052,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointQueueBindingsValidateBeforeCall(String msgVpnName, String restDeliveryPointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPointQueueBindings(Async)");
         }
-        
         // verify the required parameter 'restDeliveryPointName' is set
         if (restDeliveryPointName == null) {
             throw new ApiException("Missing the required parameter 'restDeliveryPointName' when calling getMsgVpnRestDeliveryPointQueueBindings(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointQueueBindingsCall(msgVpnName, restDeliveryPointName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -15143,7 +15160,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumerCall(String msgVpnName, String restDeliveryPointName, String restConsumerName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints/{restDeliveryPointName}/restConsumers/{restConsumerName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -15166,7 +15183,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -15186,29 +15203,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumerValidateBeforeCall(String msgVpnName, String restDeliveryPointName, String restConsumerName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPointRestConsumer(Async)");
         }
-        
         // verify the required parameter 'restDeliveryPointName' is set
         if (restDeliveryPointName == null) {
             throw new ApiException("Missing the required parameter 'restDeliveryPointName' when calling getMsgVpnRestDeliveryPointRestConsumer(Async)");
         }
-        
         // verify the required parameter 'restConsumerName' is set
         if (restConsumerName == null) {
             throw new ApiException("Missing the required parameter 'restConsumerName' when calling getMsgVpnRestDeliveryPointRestConsumer(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointRestConsumerCall(msgVpnName, restDeliveryPointName, restConsumerName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -15293,7 +15310,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonNameCall(String msgVpnName, String restDeliveryPointName, String restConsumerName, String tlsTrustedCommonName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints/{restDeliveryPointName}/restConsumers/{restConsumerName}/tlsTrustedCommonNames/{tlsTrustedCommonName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -15317,7 +15334,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -15337,39 +15354,38 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonNameValidateBeforeCall(String msgVpnName, String restDeliveryPointName, String restConsumerName, String tlsTrustedCommonName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonName(Async)");
         }
-        
         // verify the required parameter 'restDeliveryPointName' is set
         if (restDeliveryPointName == null) {
             throw new ApiException("Missing the required parameter 'restDeliveryPointName' when calling getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonName(Async)");
         }
-        
         // verify the required parameter 'restConsumerName' is set
         if (restConsumerName == null) {
             throw new ApiException("Missing the required parameter 'restConsumerName' when calling getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonName(Async)");
         }
-        
         // verify the required parameter 'tlsTrustedCommonName' is set
         if (tlsTrustedCommonName == null) {
             throw new ApiException("Missing the required parameter 'tlsTrustedCommonName' when calling getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonName(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonNameCall(msgVpnName, restDeliveryPointName, restConsumerName, tlsTrustedCommonName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a Trusted Common Name object.
-     * Get a Trusted Common Name object.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#39;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| restConsumerName|x| restDeliveryPointName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Trusted Common Name object.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#x27;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|x restConsumerName|x|x restDeliveryPointName|x|x tlsTrustedCommonName|x|x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been deprecated since 2.17. Common Name validation has been replaced by Server Certificate Name validation.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param restDeliveryPointName The name of the REST Delivery Point. (required)
      * @param restConsumerName The name of the REST Consumer. (required)
@@ -15385,7 +15401,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Trusted Common Name object.
-     * Get a Trusted Common Name object.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#39;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| restConsumerName|x| restDeliveryPointName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Trusted Common Name object.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#x27;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|x restConsumerName|x|x restDeliveryPointName|x|x tlsTrustedCommonName|x|x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been deprecated since 2.17. Common Name validation has been replaced by Server Certificate Name validation.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param restDeliveryPointName The name of the REST Delivery Point. (required)
      * @param restConsumerName The name of the REST Consumer. (required)
@@ -15402,7 +15418,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Trusted Common Name object. (asynchronously)
-     * Get a Trusted Common Name object.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#39;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| restConsumerName|x| restDeliveryPointName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Trusted Common Name object.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#x27;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|x restConsumerName|x|x restDeliveryPointName|x|x tlsTrustedCommonName|x|x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been deprecated since 2.17. Common Name validation has been replaced by Server Certificate Name validation.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param restDeliveryPointName The name of the REST Delivery Point. (required)
      * @param restConsumerName The name of the REST Consumer. (required)
@@ -15452,7 +15468,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonNamesCall(String msgVpnName, String restDeliveryPointName, String restConsumerName, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints/{restDeliveryPointName}/restConsumers/{restConsumerName}/tlsTrustedCommonNames"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -15477,7 +15493,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -15497,34 +15513,34 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonNamesValidateBeforeCall(String msgVpnName, String restDeliveryPointName, String restConsumerName, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonNames(Async)");
         }
-        
         // verify the required parameter 'restDeliveryPointName' is set
         if (restDeliveryPointName == null) {
             throw new ApiException("Missing the required parameter 'restDeliveryPointName' when calling getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonNames(Async)");
         }
-        
         // verify the required parameter 'restConsumerName' is set
         if (restConsumerName == null) {
             throw new ApiException("Missing the required parameter 'restConsumerName' when calling getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonNames(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointRestConsumerTlsTrustedCommonNamesCall(msgVpnName, restDeliveryPointName, restConsumerName, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of Trusted Common Name objects.
-     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#39;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| restConsumerName|x| restDeliveryPointName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#x27;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|x restConsumerName|x|x restDeliveryPointName|x|x tlsTrustedCommonName|x|x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been deprecated since 2.17. Common Name validation has been replaced by Server Certificate Name validation.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param restDeliveryPointName The name of the REST Delivery Point. (required)
      * @param restConsumerName The name of the REST Consumer. (required)
@@ -15540,7 +15556,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Trusted Common Name objects.
-     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#39;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| restConsumerName|x| restDeliveryPointName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#x27;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|x restConsumerName|x|x restDeliveryPointName|x|x tlsTrustedCommonName|x|x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been deprecated since 2.17. Common Name validation has been replaced by Server Certificate Name validation.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param restDeliveryPointName The name of the REST Delivery Point. (required)
      * @param restConsumerName The name of the REST Consumer. (required)
@@ -15557,7 +15573,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Trusted Common Name objects. (asynchronously)
-     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#39;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| restConsumerName|x| restDeliveryPointName|x| tlsTrustedCommonName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Trusted Common Name objects.  The Trusted Common Names for the REST Consumer are used by encrypted transports to verify the name in the certificate presented by the remote REST consumer. They must include the common name of the remote REST consumer&#x27;s server certificate.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|x restConsumerName|x|x restDeliveryPointName|x|x tlsTrustedCommonName|x|x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been deprecated since 2.17. Common Name validation has been replaced by Server Certificate Name validation.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param restDeliveryPointName The name of the REST Delivery Point. (required)
      * @param restConsumerName The name of the REST Consumer. (required)
@@ -15608,7 +15624,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumersCall(String msgVpnName, String restDeliveryPointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints/{restDeliveryPointName}/restConsumers"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -15636,7 +15652,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -15656,24 +15672,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumersValidateBeforeCall(String msgVpnName, String restDeliveryPointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPointRestConsumers(Async)");
         }
-        
         // verify the required parameter 'restDeliveryPointName' is set
         if (restDeliveryPointName == null) {
             throw new ApiException("Missing the required parameter 'restDeliveryPointName' when calling getMsgVpnRestDeliveryPointRestConsumers(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointRestConsumersCall(msgVpnName, restDeliveryPointName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -15764,7 +15781,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -15791,7 +15808,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -15811,19 +15828,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPoints(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -15909,7 +15928,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointCall(String msgVpnName, String topicEndpointName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -15931,7 +15950,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -15951,24 +15970,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointValidateBeforeCall(String msgVpnName, String topicEndpointName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpoint(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling getMsgVpnTopicEndpoint(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointCall(msgVpnName, topicEndpointName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -16049,7 +16069,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointMsgCall(String msgVpnName, String topicEndpointName, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/msgs/{msgId}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -16072,7 +16092,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -16092,29 +16112,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointMsgValidateBeforeCall(String msgVpnName, String topicEndpointName, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpointMsg(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling getMsgVpnTopicEndpointMsg(Async)");
         }
-        
         // verify the required parameter 'msgId' is set
         if (msgId == null) {
             throw new ApiException("Missing the required parameter 'msgId' when calling getMsgVpnTopicEndpointMsg(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointMsgCall(msgVpnName, topicEndpointName, msgId, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -16200,7 +16220,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointMsgsCall(String msgVpnName, String topicEndpointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/msgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -16228,7 +16248,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -16248,24 +16268,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointMsgsValidateBeforeCall(String msgVpnName, String topicEndpointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpointMsgs(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling getMsgVpnTopicEndpointMsgs(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointMsgsCall(msgVpnName, topicEndpointName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -16357,7 +16378,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointPrioritiesCall(String msgVpnName, String topicEndpointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/priorities"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -16385,7 +16406,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -16405,24 +16426,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointPrioritiesValidateBeforeCall(String msgVpnName, String topicEndpointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpointPriorities(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling getMsgVpnTopicEndpointPriorities(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointPrioritiesCall(msgVpnName, topicEndpointName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -16512,7 +16534,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointPriorityCall(String msgVpnName, String topicEndpointName, String priority, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/priorities/{priority}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -16535,7 +16557,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -16555,29 +16577,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointPriorityValidateBeforeCall(String msgVpnName, String topicEndpointName, String priority, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpointPriority(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling getMsgVpnTopicEndpointPriority(Async)");
         }
-        
         // verify the required parameter 'priority' is set
         if (priority == null) {
             throw new ApiException("Missing the required parameter 'priority' when calling getMsgVpnTopicEndpointPriority(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointPriorityCall(msgVpnName, topicEndpointName, priority, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -16660,7 +16682,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointTemplateCall(String msgVpnName, String topicEndpointTemplateName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpointTemplates/{topicEndpointTemplateName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -16682,7 +16704,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -16702,24 +16724,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointTemplateValidateBeforeCall(String msgVpnName, String topicEndpointTemplateName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpointTemplate(Async)");
         }
-        
         // verify the required parameter 'topicEndpointTemplateName' is set
         if (topicEndpointTemplateName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointTemplateName' when calling getMsgVpnTopicEndpointTemplate(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointTemplateCall(msgVpnName, topicEndpointTemplateName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -16801,7 +16824,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointTemplatesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpointTemplates"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -16828,7 +16851,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -16848,19 +16871,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointTemplatesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpointTemplates(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointTemplatesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -16947,7 +16972,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointTxFlowCall(String msgVpnName, String topicEndpointName, String flowId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/txFlows/{flowId}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -16970,7 +16995,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -16990,29 +17015,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointTxFlowValidateBeforeCall(String msgVpnName, String topicEndpointName, String flowId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpointTxFlow(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling getMsgVpnTopicEndpointTxFlow(Async)");
         }
-        
         // verify the required parameter 'flowId' is set
         if (flowId == null) {
             throw new ApiException("Missing the required parameter 'flowId' when calling getMsgVpnTopicEndpointTxFlow(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointTxFlowCall(msgVpnName, topicEndpointName, flowId, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -17098,7 +17123,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointTxFlowsCall(String msgVpnName, String topicEndpointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/txFlows"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -17126,7 +17151,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -17146,24 +17171,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointTxFlowsValidateBeforeCall(String msgVpnName, String topicEndpointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpointTxFlows(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling getMsgVpnTopicEndpointTxFlows(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointTxFlowsCall(msgVpnName, topicEndpointName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -17254,7 +17280,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -17281,7 +17307,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -17301,19 +17327,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpoints(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -17399,7 +17427,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTransactionCall(String msgVpnName, String xid, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/transactions/{xid}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -17421,7 +17449,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -17441,24 +17469,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTransactionValidateBeforeCall(String msgVpnName, String xid, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTransaction(Async)");
         }
-        
         // verify the required parameter 'xid' is set
         if (xid == null) {
             throw new ApiException("Missing the required parameter 'xid' when calling getMsgVpnTransaction(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTransactionCall(msgVpnName, xid, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -17539,7 +17568,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTransactionConsumerMsgCall(String msgVpnName, String xid, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/transactions/{xid}/consumerMsgs/{msgId}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -17562,7 +17591,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -17582,29 +17611,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTransactionConsumerMsgValidateBeforeCall(String msgVpnName, String xid, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTransactionConsumerMsg(Async)");
         }
-        
         // verify the required parameter 'xid' is set
         if (xid == null) {
             throw new ApiException("Missing the required parameter 'xid' when calling getMsgVpnTransactionConsumerMsg(Async)");
         }
-        
         // verify the required parameter 'msgId' is set
         if (msgId == null) {
             throw new ApiException("Missing the required parameter 'msgId' when calling getMsgVpnTransactionConsumerMsg(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTransactionConsumerMsgCall(msgVpnName, xid, msgId, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -17690,7 +17719,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTransactionConsumerMsgsCall(String msgVpnName, String xid, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/transactions/{xid}/consumerMsgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -17718,7 +17747,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -17738,24 +17767,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTransactionConsumerMsgsValidateBeforeCall(String msgVpnName, String xid, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTransactionConsumerMsgs(Async)");
         }
-        
         // verify the required parameter 'xid' is set
         if (xid == null) {
             throw new ApiException("Missing the required parameter 'xid' when calling getMsgVpnTransactionConsumerMsgs(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTransactionConsumerMsgsCall(msgVpnName, xid, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -17845,7 +17875,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTransactionPublisherMsgCall(String msgVpnName, String xid, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/transactions/{xid}/publisherMsgs/{msgId}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -17868,7 +17898,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -17888,29 +17918,29 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTransactionPublisherMsgValidateBeforeCall(String msgVpnName, String xid, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTransactionPublisherMsg(Async)");
         }
-        
         // verify the required parameter 'xid' is set
         if (xid == null) {
             throw new ApiException("Missing the required parameter 'xid' when calling getMsgVpnTransactionPublisherMsg(Async)");
         }
-        
         // verify the required parameter 'msgId' is set
         if (msgId == null) {
             throw new ApiException("Missing the required parameter 'msgId' when calling getMsgVpnTransactionPublisherMsg(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTransactionPublisherMsgCall(msgVpnName, xid, msgId, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -17996,7 +18026,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTransactionPublisherMsgsCall(String msgVpnName, String xid, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/transactions/{xid}/publisherMsgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -18024,7 +18054,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -18044,24 +18074,25 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTransactionPublisherMsgsValidateBeforeCall(String msgVpnName, String xid, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTransactionPublisherMsgs(Async)");
         }
-        
         // verify the required parameter 'xid' is set
         if (xid == null) {
             throw new ApiException("Missing the required parameter 'xid' when calling getMsgVpnTransactionPublisherMsgs(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTransactionPublisherMsgsCall(msgVpnName, xid, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -18152,7 +18183,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTransactionsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/transactions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -18179,7 +18210,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -18199,19 +18230,21 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTransactionsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTransactions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTransactionsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -18298,7 +18331,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnsCall(Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns";
 
@@ -18324,7 +18357,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -18344,19 +18377,22 @@ public class MsgVpnApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnsValidateBeforeCall(Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         
-
         com.squareup.okhttp.Call call = getMsgVpnsCall(count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of Message VPN objects.
-     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x restTlsServerCertEnforceTrustedCommonNameEnabled||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
      * @param where Include in the response only objects where certain conditions are true. See the the documentation for the &#x60;where&#x60; parameter. (optional)
@@ -18371,7 +18407,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Message VPN objects.
-     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x restTlsServerCertEnforceTrustedCommonNameEnabled||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
      * @param where Include in the response only objects where certain conditions are true. See the the documentation for the &#x60;where&#x60; parameter. (optional)
@@ -18387,7 +18423,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Message VPN objects. (asynchronously)
-     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: counter.controlRxByteCount||x counter.controlRxMsgCount||x counter.controlTxByteCount||x counter.controlTxMsgCount||x counter.dataRxByteCount||x counter.dataRxMsgCount||x counter.dataTxByteCount||x counter.dataTxMsgCount||x counter.discardedRxMsgCount||x counter.discardedTxMsgCount||x counter.loginRxMsgCount||x counter.loginTxMsgCount||x counter.msgSpoolRxMsgCount||x counter.msgSpoolTxMsgCount||x counter.tlsRxByteCount||x counter.tlsTxByteCount||x msgVpnName|x| rate.averageRxByteRate||x rate.averageRxMsgRate||x rate.averageTxByteRate||x rate.averageTxMsgRate||x rate.rxByteRate||x rate.rxMsgRate||x rate.tlsAverageRxByteRate||x rate.tlsAverageTxByteRate||x rate.tlsRxByteRate||x rate.tlsTxByteRate||x rate.txByteRate||x rate.txMsgRate||x restTlsServerCertEnforceTrustedCommonNameEnabled||x    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
      * @param where Include in the response only objects where certain conditions are true. See the the documentation for the &#x60;where&#x60; parameter. (optional)

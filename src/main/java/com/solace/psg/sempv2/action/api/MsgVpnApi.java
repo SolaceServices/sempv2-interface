@@ -1,8 +1,8 @@
 /*
  * SEMP (Solace Element Management Protocol)
- * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Configuration|/SEMP/v2/config|Reading and writing config state|See note 2 Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any (non-exclusively) of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written|See note 3 Write-Only|Attribute can only be written, not read| Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version|    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object|New attribute values|Object attributes and metadata|Set to default (but see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters \"q1\" and \"q2\" ; with values \"val1\" and \"val2\" respectively /SEMP/v2/action/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/action/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/action/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/action/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/action/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/action/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/action/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/action/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/action/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/action/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/action/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|For PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT. If the object does not exist, it is created first.    
+ * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Configuration|/SEMP/v2/config|Reading and writing config state|See note 2 Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any combination of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written.|See note 3 Write-Only|Attribute can only be written, not read, unless the attribute is also opaque|See the documentation for the opaque property Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version| Opaque|Attribute can be set or retrieved in opaque form when the `opaquePassword` query parameter is present|See the `opaquePassword` query parameter documentation    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    In the monitoring API, any non-identifying attribute may not be returned in a GET.  ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object (see note 5)|New attribute values|Object attributes and metadata|Set to default, with certain exceptions (see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters ; \"q1\" and \"q2\" with values \"val1\" and \"val2\" respectively /SEMP/v2/action/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/action/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/action/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/action/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/action/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/action/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/action/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/action/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/action/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/action/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/action/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ### opaquePassword  Attributes with the opaque property are also write-only and so cannot normally be retrieved in a GET. However, when a password is provided in the `opaquePassword` query parameter, attributes with the opaque property are retrieved in a GET in opaque form, encrypted with this password. The query parameter can also be used on a POST, PATCH, or PUT to set opaque attributes using opaque attribute values retrieved in a GET, so long as:  1. the same password that was used to retrieve the opaque attribute values is provided; and  2. the broker to which the request is being sent has the same major and minor SEMP version as the broker that produced the opaque attribute values.  The password provided in the query parameter must be a minimum of 8 characters and a maximum of 128 characters.  The query parameter can only be used in the configuration API, and only over HTTPS.  ## Help  Visit [our website](https://solace.com) to learn more about Solace.  You can also download the SEMP API specifications by clicking [here](https://solace.com/downloads/).  If you need additional support, please contact us at [support@solace.com](mailto:support@solace.com).  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|On a PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT, except in the following two cases: there is a mutual requires relationship with another non-write-only attribute and both attributes are absent from the request; or the attribute is also opaque and the `opaquePassword` query parameter is provided in the request. 5|On a PUT, if the object does not exist, it is created first.  
  *
- * OpenAPI spec version: 9.4
+ * OpenAPI spec version: 2.17
  * Contact: support@solace.com
  *
  * NOTE: This class is auto generated by the swagger code generator program.
@@ -10,12 +10,21 @@
  * Do not edit the class manually.
  */
 
-
 package com.solace.psg.sempv2.action.api;
+
+import com.solace.psg.sempv2.apiclient.ApiCallback;
+import com.solace.psg.sempv2.apiclient.ApiClient;
+import com.solace.psg.sempv2.apiclient.ApiException;
+import com.solace.psg.sempv2.apiclient.ApiResponse;
+import com.solace.psg.sempv2.apiclient.Configuration;
+import com.solace.psg.sempv2.apiclient.Pair;
+import com.solace.psg.sempv2.apiclient.ProgressRequestBody;
+import com.solace.psg.sempv2.apiclient.ProgressResponseBody;
 
 import com.google.gson.reflect.TypeToken;
 
 import java.io.IOException;
+
 
 import com.solace.psg.sempv2.action.model.MsgVpnAuthenticationOauthProviderClearStats;
 import com.solace.psg.sempv2.action.model.MsgVpnAuthenticationOauthProviderResponse;
@@ -86,15 +95,6 @@ import com.solace.psg.sempv2.action.model.MsgVpnTransactionRollback;
 import com.solace.psg.sempv2.action.model.MsgVpnTransactionsResponse;
 import com.solace.psg.sempv2.action.model.MsgVpnsResponse;
 import com.solace.psg.sempv2.action.model.SempMetaOnlyResponse;
-import com.solace.psg.sempv2.apiclient.ApiCallback;
-import com.solace.psg.sempv2.apiclient.ApiClient;
-import com.solace.psg.sempv2.apiclient.ApiException;
-import com.solace.psg.sempv2.apiclient.ApiResponse;
-import com.solace.psg.sempv2.apiclient.Configuration;
-import com.solace.psg.sempv2.apiclient.Pair;
-import com.solace.psg.sempv2.apiclient.ProgressRequestBody;
-import com.solace.psg.sempv2.apiclient.ProgressResponseBody;
-import com.solace.psg.sempv2.auth.HttpBasicAuth;
 
 import java.lang.reflect.Type;
 import java.util.ArrayList;
@@ -123,17 +123,17 @@ public class MsgVpnApi {
 
     /**
      * Build call for doMsgVpnAuthenticationOauthProviderClearStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param oauthProviderName The name of the OAuth Provider. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnAuthenticationOauthProviderClearStatsCall(String msgVpnName, String oauthProviderName, MsgVpnAuthenticationOauthProviderClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnAuthenticationOauthProviderClearStatsCall(MsgVpnAuthenticationOauthProviderClearStats body, String msgVpnName, String oauthProviderName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/authenticationOauthProviders/{oauthProviderName}/clearStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -170,59 +170,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnAuthenticationOauthProviderClearStatsValidateBeforeCall(String msgVpnName, String oauthProviderName, MsgVpnAuthenticationOauthProviderClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnAuthenticationOauthProviderClearStatsValidateBeforeCall(MsgVpnAuthenticationOauthProviderClearStats body, String msgVpnName, String oauthProviderName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnAuthenticationOauthProviderClearStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnAuthenticationOauthProviderClearStats(Async)");
         }
-        
         // verify the required parameter 'oauthProviderName' is set
         if (oauthProviderName == null) {
             throw new ApiException("Missing the required parameter 'oauthProviderName' when calling doMsgVpnAuthenticationOauthProviderClearStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnAuthenticationOauthProviderClearStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnAuthenticationOauthProviderClearStatsCall(msgVpnName, oauthProviderName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnAuthenticationOauthProviderClearStatsCall(body, msgVpnName, oauthProviderName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the statistics for the OAuth Provider.
      * Clear the statistics for the OAuth Provider.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.13.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param oauthProviderName The name of the OAuth Provider. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnAuthenticationOauthProviderClearStats(String msgVpnName, String oauthProviderName, MsgVpnAuthenticationOauthProviderClearStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnAuthenticationOauthProviderClearStatsWithHttpInfo(msgVpnName, oauthProviderName, body);
+    public SempMetaOnlyResponse doMsgVpnAuthenticationOauthProviderClearStats(MsgVpnAuthenticationOauthProviderClearStats body, String msgVpnName, String oauthProviderName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnAuthenticationOauthProviderClearStatsWithHttpInfo(body, msgVpnName, oauthProviderName);
         return resp.getData();
     }
 
     /**
      * Clear the statistics for the OAuth Provider.
      * Clear the statistics for the OAuth Provider.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.13.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param oauthProviderName The name of the OAuth Provider. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnAuthenticationOauthProviderClearStatsWithHttpInfo(String msgVpnName, String oauthProviderName, MsgVpnAuthenticationOauthProviderClearStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnAuthenticationOauthProviderClearStatsValidateBeforeCall(msgVpnName, oauthProviderName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnAuthenticationOauthProviderClearStatsWithHttpInfo(MsgVpnAuthenticationOauthProviderClearStats body, String msgVpnName, String oauthProviderName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnAuthenticationOauthProviderClearStatsValidateBeforeCall(body, msgVpnName, oauthProviderName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -230,14 +230,14 @@ public class MsgVpnApi {
     /**
      * Clear the statistics for the OAuth Provider. (asynchronously)
      * Clear the statistics for the OAuth Provider.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.13.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param oauthProviderName The name of the OAuth Provider. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnAuthenticationOauthProviderClearStatsAsync(String msgVpnName, String oauthProviderName, MsgVpnAuthenticationOauthProviderClearStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnAuthenticationOauthProviderClearStatsAsync(MsgVpnAuthenticationOauthProviderClearStats body, String msgVpnName, String oauthProviderName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -258,25 +258,25 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnAuthenticationOauthProviderClearStatsValidateBeforeCall(msgVpnName, oauthProviderName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnAuthenticationOauthProviderClearStatsValidateBeforeCall(body, msgVpnName, oauthProviderName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnBridgeClearEvent
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnBridgeClearEventCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeClearEvent body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnBridgeClearEventCall(MsgVpnBridgeClearEvent body, String msgVpnName, String bridgeName, String bridgeVirtualRouter, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}/clearEvent"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -314,66 +314,65 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnBridgeClearEventValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeClearEvent body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnBridgeClearEventValidateBeforeCall(MsgVpnBridgeClearEvent body, String msgVpnName, String bridgeName, String bridgeVirtualRouter, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnBridgeClearEvent(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnBridgeClearEvent(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling doMsgVpnBridgeClearEvent(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling doMsgVpnBridgeClearEvent(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnBridgeClearEvent(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnBridgeClearEventCall(msgVpnName, bridgeName, bridgeVirtualRouter, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnBridgeClearEventCall(body, msgVpnName, bridgeName, bridgeVirtualRouter, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear an event for the Bridge so it can be generated anew.
      * Clear an event for the Bridge so it can be generated anew.   Attribute|Required|Deprecated :---|:---:|:---: eventName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;global/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnBridgeClearEvent(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeClearEvent body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnBridgeClearEventWithHttpInfo(msgVpnName, bridgeName, bridgeVirtualRouter, body);
+    public SempMetaOnlyResponse doMsgVpnBridgeClearEvent(MsgVpnBridgeClearEvent body, String msgVpnName, String bridgeName, String bridgeVirtualRouter) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnBridgeClearEventWithHttpInfo(body, msgVpnName, bridgeName, bridgeVirtualRouter);
         return resp.getData();
     }
 
     /**
      * Clear an event for the Bridge so it can be generated anew.
      * Clear an event for the Bridge so it can be generated anew.   Attribute|Required|Deprecated :---|:---:|:---: eventName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;global/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnBridgeClearEventWithHttpInfo(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeClearEvent body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnBridgeClearEventValidateBeforeCall(msgVpnName, bridgeName, bridgeVirtualRouter, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnBridgeClearEventWithHttpInfo(MsgVpnBridgeClearEvent body, String msgVpnName, String bridgeName, String bridgeVirtualRouter) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnBridgeClearEventValidateBeforeCall(body, msgVpnName, bridgeName, bridgeVirtualRouter, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -381,15 +380,15 @@ public class MsgVpnApi {
     /**
      * Clear an event for the Bridge so it can be generated anew. (asynchronously)
      * Clear an event for the Bridge so it can be generated anew.   Attribute|Required|Deprecated :---|:---:|:---: eventName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;global/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnBridgeClearEventAsync(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeClearEvent body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnBridgeClearEventAsync(MsgVpnBridgeClearEvent body, String msgVpnName, String bridgeName, String bridgeVirtualRouter, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -410,25 +409,25 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnBridgeClearEventValidateBeforeCall(msgVpnName, bridgeName, bridgeVirtualRouter, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnBridgeClearEventValidateBeforeCall(body, msgVpnName, bridgeName, bridgeVirtualRouter, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnBridgeClearStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnBridgeClearStatsCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnBridgeClearStatsCall(MsgVpnBridgeClearStats body, String msgVpnName, String bridgeName, String bridgeVirtualRouter, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}/clearStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -466,66 +465,65 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnBridgeClearStatsValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnBridgeClearStatsValidateBeforeCall(MsgVpnBridgeClearStats body, String msgVpnName, String bridgeName, String bridgeVirtualRouter, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnBridgeClearStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnBridgeClearStats(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling doMsgVpnBridgeClearStats(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling doMsgVpnBridgeClearStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnBridgeClearStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnBridgeClearStatsCall(msgVpnName, bridgeName, bridgeVirtualRouter, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnBridgeClearStatsCall(body, msgVpnName, bridgeName, bridgeVirtualRouter, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the statistics for the Bridge.
      * Clear the statistics for the Bridge.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnBridgeClearStats(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeClearStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnBridgeClearStatsWithHttpInfo(msgVpnName, bridgeName, bridgeVirtualRouter, body);
+    public SempMetaOnlyResponse doMsgVpnBridgeClearStats(MsgVpnBridgeClearStats body, String msgVpnName, String bridgeName, String bridgeVirtualRouter) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnBridgeClearStatsWithHttpInfo(body, msgVpnName, bridgeName, bridgeVirtualRouter);
         return resp.getData();
     }
 
     /**
      * Clear the statistics for the Bridge.
      * Clear the statistics for the Bridge.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnBridgeClearStatsWithHttpInfo(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeClearStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnBridgeClearStatsValidateBeforeCall(msgVpnName, bridgeName, bridgeVirtualRouter, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnBridgeClearStatsWithHttpInfo(MsgVpnBridgeClearStats body, String msgVpnName, String bridgeName, String bridgeVirtualRouter) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnBridgeClearStatsValidateBeforeCall(body, msgVpnName, bridgeName, bridgeVirtualRouter, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -533,15 +531,15 @@ public class MsgVpnApi {
     /**
      * Clear the statistics for the Bridge. (asynchronously)
      * Clear the statistics for the Bridge.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnBridgeClearStatsAsync(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeClearStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnBridgeClearStatsAsync(MsgVpnBridgeClearStats body, String msgVpnName, String bridgeName, String bridgeVirtualRouter, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -562,25 +560,25 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnBridgeClearStatsValidateBeforeCall(msgVpnName, bridgeName, bridgeVirtualRouter, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnBridgeClearStatsValidateBeforeCall(body, msgVpnName, bridgeName, bridgeVirtualRouter, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnBridgeDisconnect
+     * @param body The Disconnect action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Disconnect action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnBridgeDisconnectCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeDisconnect body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnBridgeDisconnectCall(MsgVpnBridgeDisconnect body, String msgVpnName, String bridgeName, String bridgeVirtualRouter, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}/disconnect"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -618,66 +616,65 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnBridgeDisconnectValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeDisconnect body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnBridgeDisconnectValidateBeforeCall(MsgVpnBridgeDisconnect body, String msgVpnName, String bridgeName, String bridgeVirtualRouter, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnBridgeDisconnect(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnBridgeDisconnect(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling doMsgVpnBridgeDisconnect(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling doMsgVpnBridgeDisconnect(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnBridgeDisconnect(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnBridgeDisconnectCall(msgVpnName, bridgeName, bridgeVirtualRouter, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnBridgeDisconnectCall(body, msgVpnName, bridgeName, bridgeVirtualRouter, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Disconnect the Bridge.
      * Disconnect the Bridge.    A SEMP client authorized with a minimum access scope/level of \&quot;global/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Disconnect action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Disconnect action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnBridgeDisconnect(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeDisconnect body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnBridgeDisconnectWithHttpInfo(msgVpnName, bridgeName, bridgeVirtualRouter, body);
+    public SempMetaOnlyResponse doMsgVpnBridgeDisconnect(MsgVpnBridgeDisconnect body, String msgVpnName, String bridgeName, String bridgeVirtualRouter) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnBridgeDisconnectWithHttpInfo(body, msgVpnName, bridgeName, bridgeVirtualRouter);
         return resp.getData();
     }
 
     /**
      * Disconnect the Bridge.
      * Disconnect the Bridge.    A SEMP client authorized with a minimum access scope/level of \&quot;global/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Disconnect action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Disconnect action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnBridgeDisconnectWithHttpInfo(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeDisconnect body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnBridgeDisconnectValidateBeforeCall(msgVpnName, bridgeName, bridgeVirtualRouter, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnBridgeDisconnectWithHttpInfo(MsgVpnBridgeDisconnect body, String msgVpnName, String bridgeName, String bridgeVirtualRouter) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnBridgeDisconnectValidateBeforeCall(body, msgVpnName, bridgeName, bridgeVirtualRouter, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -685,15 +682,15 @@ public class MsgVpnApi {
     /**
      * Disconnect the Bridge. (asynchronously)
      * Disconnect the Bridge.    A SEMP client authorized with a minimum access scope/level of \&quot;global/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Disconnect action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param bridgeName The name of the Bridge. (required)
      * @param bridgeVirtualRouter The virtual router of the Bridge. (required)
-     * @param body The Disconnect action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnBridgeDisconnectAsync(String msgVpnName, String bridgeName, String bridgeVirtualRouter, MsgVpnBridgeDisconnect body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnBridgeDisconnectAsync(MsgVpnBridgeDisconnect body, String msgVpnName, String bridgeName, String bridgeVirtualRouter, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -714,23 +711,23 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnBridgeDisconnectValidateBeforeCall(msgVpnName, bridgeName, bridgeVirtualRouter, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnBridgeDisconnectValidateBeforeCall(body, msgVpnName, bridgeName, bridgeVirtualRouter, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnClearMsgSpoolStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClearMsgSpoolStatsCall(String msgVpnName, MsgVpnClearMsgSpoolStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClearMsgSpoolStatsCall(MsgVpnClearMsgSpoolStats body, String msgVpnName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clearMsgSpoolStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -766,52 +763,53 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnClearMsgSpoolStatsValidateBeforeCall(String msgVpnName, MsgVpnClearMsgSpoolStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnClearMsgSpoolStatsValidateBeforeCall(MsgVpnClearMsgSpoolStats body, String msgVpnName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClearMsgSpoolStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnClearMsgSpoolStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClearMsgSpoolStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnClearMsgSpoolStatsCall(msgVpnName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClearMsgSpoolStatsCall(body, msgVpnName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the message spool statistics for the Message VPN.
      * Clear the message spool statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnClearMsgSpoolStats(String msgVpnName, MsgVpnClearMsgSpoolStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClearMsgSpoolStatsWithHttpInfo(msgVpnName, body);
+    public SempMetaOnlyResponse doMsgVpnClearMsgSpoolStats(MsgVpnClearMsgSpoolStats body, String msgVpnName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClearMsgSpoolStatsWithHttpInfo(body, msgVpnName);
         return resp.getData();
     }
 
     /**
      * Clear the message spool statistics for the Message VPN.
      * Clear the message spool statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClearMsgSpoolStatsWithHttpInfo(String msgVpnName, MsgVpnClearMsgSpoolStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnClearMsgSpoolStatsValidateBeforeCall(msgVpnName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClearMsgSpoolStatsWithHttpInfo(MsgVpnClearMsgSpoolStats body, String msgVpnName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnClearMsgSpoolStatsValidateBeforeCall(body, msgVpnName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -819,13 +817,13 @@ public class MsgVpnApi {
     /**
      * Clear the message spool statistics for the Message VPN. (asynchronously)
      * Clear the message spool statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClearMsgSpoolStatsAsync(String msgVpnName, MsgVpnClearMsgSpoolStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClearMsgSpoolStatsAsync(MsgVpnClearMsgSpoolStats body, String msgVpnName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -846,23 +844,23 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnClearMsgSpoolStatsValidateBeforeCall(msgVpnName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClearMsgSpoolStatsValidateBeforeCall(body, msgVpnName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnClearReplicationStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClearReplicationStatsCall(String msgVpnName, MsgVpnClearReplicationStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClearReplicationStatsCall(MsgVpnClearReplicationStats body, String msgVpnName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clearReplicationStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -898,52 +896,53 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnClearReplicationStatsValidateBeforeCall(String msgVpnName, MsgVpnClearReplicationStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnClearReplicationStatsValidateBeforeCall(MsgVpnClearReplicationStats body, String msgVpnName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClearReplicationStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnClearReplicationStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClearReplicationStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnClearReplicationStatsCall(msgVpnName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClearReplicationStatsCall(body, msgVpnName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the replication statistics for the Message VPN.
      * Clear the replication statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnClearReplicationStats(String msgVpnName, MsgVpnClearReplicationStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClearReplicationStatsWithHttpInfo(msgVpnName, body);
+    public SempMetaOnlyResponse doMsgVpnClearReplicationStats(MsgVpnClearReplicationStats body, String msgVpnName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClearReplicationStatsWithHttpInfo(body, msgVpnName);
         return resp.getData();
     }
 
     /**
      * Clear the replication statistics for the Message VPN.
      * Clear the replication statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClearReplicationStatsWithHttpInfo(String msgVpnName, MsgVpnClearReplicationStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnClearReplicationStatsValidateBeforeCall(msgVpnName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClearReplicationStatsWithHttpInfo(MsgVpnClearReplicationStats body, String msgVpnName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnClearReplicationStatsValidateBeforeCall(body, msgVpnName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -951,13 +950,13 @@ public class MsgVpnApi {
     /**
      * Clear the replication statistics for the Message VPN. (asynchronously)
      * Clear the replication statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClearReplicationStatsAsync(String msgVpnName, MsgVpnClearReplicationStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClearReplicationStatsAsync(MsgVpnClearReplicationStats body, String msgVpnName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -978,23 +977,23 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnClearReplicationStatsValidateBeforeCall(msgVpnName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClearReplicationStatsValidateBeforeCall(body, msgVpnName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnClearServiceStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClearServiceStatsCall(String msgVpnName, MsgVpnClearServiceStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClearServiceStatsCall(MsgVpnClearServiceStats body, String msgVpnName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clearServiceStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -1030,52 +1029,53 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnClearServiceStatsValidateBeforeCall(String msgVpnName, MsgVpnClearServiceStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnClearServiceStatsValidateBeforeCall(MsgVpnClearServiceStats body, String msgVpnName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClearServiceStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnClearServiceStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClearServiceStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnClearServiceStatsCall(msgVpnName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClearServiceStatsCall(body, msgVpnName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the service statistics for the Message VPN.
      * Clear the service statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnClearServiceStats(String msgVpnName, MsgVpnClearServiceStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClearServiceStatsWithHttpInfo(msgVpnName, body);
+    public SempMetaOnlyResponse doMsgVpnClearServiceStats(MsgVpnClearServiceStats body, String msgVpnName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClearServiceStatsWithHttpInfo(body, msgVpnName);
         return resp.getData();
     }
 
     /**
      * Clear the service statistics for the Message VPN.
      * Clear the service statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClearServiceStatsWithHttpInfo(String msgVpnName, MsgVpnClearServiceStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnClearServiceStatsValidateBeforeCall(msgVpnName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClearServiceStatsWithHttpInfo(MsgVpnClearServiceStats body, String msgVpnName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnClearServiceStatsValidateBeforeCall(body, msgVpnName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -1083,13 +1083,13 @@ public class MsgVpnApi {
     /**
      * Clear the service statistics for the Message VPN. (asynchronously)
      * Clear the service statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClearServiceStatsAsync(String msgVpnName, MsgVpnClearServiceStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClearServiceStatsAsync(MsgVpnClearServiceStats body, String msgVpnName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -1110,23 +1110,23 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnClearServiceStatsValidateBeforeCall(msgVpnName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClearServiceStatsValidateBeforeCall(body, msgVpnName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnClearStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClearStatsCall(String msgVpnName, MsgVpnClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClearStatsCall(MsgVpnClearStats body, String msgVpnName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clearStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -1162,52 +1162,53 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnClearStatsValidateBeforeCall(String msgVpnName, MsgVpnClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnClearStatsValidateBeforeCall(MsgVpnClearStats body, String msgVpnName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClearStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnClearStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClearStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnClearStatsCall(msgVpnName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClearStatsCall(body, msgVpnName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the client statistics for the Message VPN.
      * Clear the client statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnClearStats(String msgVpnName, MsgVpnClearStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClearStatsWithHttpInfo(msgVpnName, body);
+    public SempMetaOnlyResponse doMsgVpnClearStats(MsgVpnClearStats body, String msgVpnName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClearStatsWithHttpInfo(body, msgVpnName);
         return resp.getData();
     }
 
     /**
      * Clear the client statistics for the Message VPN.
      * Clear the client statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClearStatsWithHttpInfo(String msgVpnName, MsgVpnClearStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnClearStatsValidateBeforeCall(msgVpnName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClearStatsWithHttpInfo(MsgVpnClearStats body, String msgVpnName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnClearStatsValidateBeforeCall(body, msgVpnName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -1215,13 +1216,13 @@ public class MsgVpnApi {
     /**
      * Clear the client statistics for the Message VPN. (asynchronously)
      * Clear the client statistics for the Message VPN.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClearStatsAsync(String msgVpnName, MsgVpnClearStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClearStatsAsync(MsgVpnClearStats body, String msgVpnName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -1242,24 +1243,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnClearStatsValidateBeforeCall(msgVpnName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClearStatsValidateBeforeCall(body, msgVpnName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnClientClearEvent
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClientClearEventCall(String msgVpnName, String clientName, MsgVpnClientClearEvent body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClientClearEventCall(MsgVpnClientClearEvent body, String msgVpnName, String clientName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/clearEvent"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1296,59 +1297,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnClientClearEventValidateBeforeCall(String msgVpnName, String clientName, MsgVpnClientClearEvent body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnClientClearEventValidateBeforeCall(MsgVpnClientClearEvent body, String msgVpnName, String clientName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClientClearEvent(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnClientClearEvent(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling doMsgVpnClientClearEvent(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClientClearEvent(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnClientClearEventCall(msgVpnName, clientName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClientClearEventCall(body, msgVpnName, clientName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear an event for the Client so it can be generated anew.
      * Clear an event for the Client so it can be generated anew.   Attribute|Required|Deprecated :---|:---:|:---: eventName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnClientClearEvent(String msgVpnName, String clientName, MsgVpnClientClearEvent body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClientClearEventWithHttpInfo(msgVpnName, clientName, body);
+    public SempMetaOnlyResponse doMsgVpnClientClearEvent(MsgVpnClientClearEvent body, String msgVpnName, String clientName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClientClearEventWithHttpInfo(body, msgVpnName, clientName);
         return resp.getData();
     }
 
     /**
      * Clear an event for the Client so it can be generated anew.
      * Clear an event for the Client so it can be generated anew.   Attribute|Required|Deprecated :---|:---:|:---: eventName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClientClearEventWithHttpInfo(String msgVpnName, String clientName, MsgVpnClientClearEvent body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnClientClearEventValidateBeforeCall(msgVpnName, clientName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClientClearEventWithHttpInfo(MsgVpnClientClearEvent body, String msgVpnName, String clientName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnClientClearEventValidateBeforeCall(body, msgVpnName, clientName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -1356,14 +1357,14 @@ public class MsgVpnApi {
     /**
      * Clear an event for the Client so it can be generated anew. (asynchronously)
      * Clear an event for the Client so it can be generated anew.   Attribute|Required|Deprecated :---|:---:|:---: eventName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClientClearEventAsync(String msgVpnName, String clientName, MsgVpnClientClearEvent body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClientClearEventAsync(MsgVpnClientClearEvent body, String msgVpnName, String clientName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -1384,24 +1385,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnClientClearEventValidateBeforeCall(msgVpnName, clientName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClientClearEventValidateBeforeCall(body, msgVpnName, clientName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnClientClearStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClientClearStatsCall(String msgVpnName, String clientName, MsgVpnClientClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClientClearStatsCall(MsgVpnClientClearStats body, String msgVpnName, String clientName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/clearStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1438,59 +1439,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnClientClearStatsValidateBeforeCall(String msgVpnName, String clientName, MsgVpnClientClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnClientClearStatsValidateBeforeCall(MsgVpnClientClearStats body, String msgVpnName, String clientName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClientClearStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnClientClearStats(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling doMsgVpnClientClearStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClientClearStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnClientClearStatsCall(msgVpnName, clientName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClientClearStatsCall(body, msgVpnName, clientName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the statistics for the Client.
      * Clear the statistics for the Client.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnClientClearStats(String msgVpnName, String clientName, MsgVpnClientClearStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClientClearStatsWithHttpInfo(msgVpnName, clientName, body);
+    public SempMetaOnlyResponse doMsgVpnClientClearStats(MsgVpnClientClearStats body, String msgVpnName, String clientName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClientClearStatsWithHttpInfo(body, msgVpnName, clientName);
         return resp.getData();
     }
 
     /**
      * Clear the statistics for the Client.
      * Clear the statistics for the Client.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClientClearStatsWithHttpInfo(String msgVpnName, String clientName, MsgVpnClientClearStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnClientClearStatsValidateBeforeCall(msgVpnName, clientName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClientClearStatsWithHttpInfo(MsgVpnClientClearStats body, String msgVpnName, String clientName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnClientClearStatsValidateBeforeCall(body, msgVpnName, clientName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -1498,14 +1499,14 @@ public class MsgVpnApi {
     /**
      * Clear the statistics for the Client. (asynchronously)
      * Clear the statistics for the Client.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClientClearStatsAsync(String msgVpnName, String clientName, MsgVpnClientClearStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClientClearStatsAsync(MsgVpnClientClearStats body, String msgVpnName, String clientName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -1526,24 +1527,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnClientClearStatsValidateBeforeCall(msgVpnName, clientName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClientClearStatsValidateBeforeCall(body, msgVpnName, clientName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnClientDisconnect
+     * @param body The Disconnect action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Disconnect action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClientDisconnectCall(String msgVpnName, String clientName, MsgVpnClientDisconnect body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClientDisconnectCall(MsgVpnClientDisconnect body, String msgVpnName, String clientName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/disconnect"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1580,59 +1581,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnClientDisconnectValidateBeforeCall(String msgVpnName, String clientName, MsgVpnClientDisconnect body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnClientDisconnectValidateBeforeCall(MsgVpnClientDisconnect body, String msgVpnName, String clientName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClientDisconnect(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnClientDisconnect(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling doMsgVpnClientDisconnect(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClientDisconnect(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnClientDisconnectCall(msgVpnName, clientName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClientDisconnectCall(body, msgVpnName, clientName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Disconnect the Client.
      * Disconnect the Client.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Disconnect action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Disconnect action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnClientDisconnect(String msgVpnName, String clientName, MsgVpnClientDisconnect body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClientDisconnectWithHttpInfo(msgVpnName, clientName, body);
+    public SempMetaOnlyResponse doMsgVpnClientDisconnect(MsgVpnClientDisconnect body, String msgVpnName, String clientName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClientDisconnectWithHttpInfo(body, msgVpnName, clientName);
         return resp.getData();
     }
 
     /**
      * Disconnect the Client.
      * Disconnect the Client.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Disconnect action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Disconnect action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClientDisconnectWithHttpInfo(String msgVpnName, String clientName, MsgVpnClientDisconnect body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnClientDisconnectValidateBeforeCall(msgVpnName, clientName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClientDisconnectWithHttpInfo(MsgVpnClientDisconnect body, String msgVpnName, String clientName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnClientDisconnectValidateBeforeCall(body, msgVpnName, clientName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -1640,14 +1641,14 @@ public class MsgVpnApi {
     /**
      * Disconnect the Client. (asynchronously)
      * Disconnect the Client.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Disconnect action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
-     * @param body The Disconnect action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClientDisconnectAsync(String msgVpnName, String clientName, MsgVpnClientDisconnect body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClientDisconnectAsync(MsgVpnClientDisconnect body, String msgVpnName, String clientName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -1668,25 +1669,25 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnClientDisconnectValidateBeforeCall(msgVpnName, clientName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClientDisconnectValidateBeforeCall(body, msgVpnName, clientName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnClientTransactedSessionDelete
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
      * @param sessionName The name of the Transacted Session. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClientTransactedSessionDeleteCall(String msgVpnName, String clientName, String sessionName, MsgVpnClientTransactedSessionDelete body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClientTransactedSessionDeleteCall(MsgVpnClientTransactedSessionDelete body, String msgVpnName, String clientName, String sessionName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/transactedSessions/{sessionName}/delete"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1724,66 +1725,65 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnClientTransactedSessionDeleteValidateBeforeCall(String msgVpnName, String clientName, String sessionName, MsgVpnClientTransactedSessionDelete body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnClientTransactedSessionDeleteValidateBeforeCall(MsgVpnClientTransactedSessionDelete body, String msgVpnName, String clientName, String sessionName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClientTransactedSessionDelete(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnClientTransactedSessionDelete(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling doMsgVpnClientTransactedSessionDelete(Async)");
         }
-        
         // verify the required parameter 'sessionName' is set
         if (sessionName == null) {
             throw new ApiException("Missing the required parameter 'sessionName' when calling doMsgVpnClientTransactedSessionDelete(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnClientTransactedSessionDelete(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnClientTransactedSessionDeleteCall(msgVpnName, clientName, sessionName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClientTransactedSessionDeleteCall(body, msgVpnName, clientName, sessionName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Delete the Transacted Session.
      * Delete the Transacted Session.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
      * @param sessionName The name of the Transacted Session. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnClientTransactedSessionDelete(String msgVpnName, String clientName, String sessionName, MsgVpnClientTransactedSessionDelete body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClientTransactedSessionDeleteWithHttpInfo(msgVpnName, clientName, sessionName, body);
+    public SempMetaOnlyResponse doMsgVpnClientTransactedSessionDelete(MsgVpnClientTransactedSessionDelete body, String msgVpnName, String clientName, String sessionName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnClientTransactedSessionDeleteWithHttpInfo(body, msgVpnName, clientName, sessionName);
         return resp.getData();
     }
 
     /**
      * Delete the Transacted Session.
      * Delete the Transacted Session.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
      * @param sessionName The name of the Transacted Session. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClientTransactedSessionDeleteWithHttpInfo(String msgVpnName, String clientName, String sessionName, MsgVpnClientTransactedSessionDelete body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnClientTransactedSessionDeleteValidateBeforeCall(msgVpnName, clientName, sessionName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnClientTransactedSessionDeleteWithHttpInfo(MsgVpnClientTransactedSessionDelete body, String msgVpnName, String clientName, String sessionName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnClientTransactedSessionDeleteValidateBeforeCall(body, msgVpnName, clientName, sessionName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -1791,15 +1791,15 @@ public class MsgVpnApi {
     /**
      * Delete the Transacted Session. (asynchronously)
      * Delete the Transacted Session.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param clientName The name of the Client. (required)
      * @param sessionName The name of the Transacted Session. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnClientTransactedSessionDeleteAsync(String msgVpnName, String clientName, String sessionName, MsgVpnClientTransactedSessionDelete body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnClientTransactedSessionDeleteAsync(MsgVpnClientTransactedSessionDelete body, String msgVpnName, String clientName, String sessionName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -1820,26 +1820,26 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnClientTransactedSessionDeleteValidateBeforeCall(msgVpnName, clientName, sessionName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnClientTransactedSessionDeleteValidateBeforeCall(body, msgVpnName, clientName, sessionName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgs
+     * @param body The Backup Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Backup Cached Messages action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceBackupCachedMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsCall(MsgVpnDistributedCacheClusterInstanceBackupCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/backupCachedMsgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1878,73 +1878,71 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceBackupCachedMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsValidateBeforeCall(MsgVpnDistributedCacheClusterInstanceBackupCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgs(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgs(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgs(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Backup cached messages of the Cache Instance to disk.
      * Backup cached messages of the Cache Instance to disk.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Backup Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Backup Cached Messages action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgs(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceBackupCachedMsgs body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsWithHttpInfo(msgVpnName, cacheName, clusterName, instanceName, body);
+    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgs(MsgVpnDistributedCacheClusterInstanceBackupCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsWithHttpInfo(body, msgVpnName, cacheName, clusterName, instanceName);
         return resp.getData();
     }
 
     /**
      * Backup cached messages of the Cache Instance to disk.
      * Backup cached messages of the Cache Instance to disk.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Backup Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Backup Cached Messages action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsWithHttpInfo(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceBackupCachedMsgs body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsWithHttpInfo(MsgVpnDistributedCacheClusterInstanceBackupCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -1952,16 +1950,16 @@ public class MsgVpnApi {
     /**
      * Backup cached messages of the Cache Instance to disk. (asynchronously)
      * Backup cached messages of the Cache Instance to disk.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Backup Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Backup Cached Messages action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsAsync(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceBackupCachedMsgs body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsAsync(MsgVpnDistributedCacheClusterInstanceBackupCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -1982,26 +1980,26 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceBackupCachedMsgsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs
+     * @param body The Cancel Backup Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Cancel Backup Cached Messages action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsCall(MsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/cancelBackupCachedMsgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -2040,73 +2038,71 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsValidateBeforeCall(MsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Cancel the backup of cached messages from the Cache Instance.
      * Cancel the backup of cached messages from the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Backup Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Cancel Backup Cached Messages action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsWithHttpInfo(msgVpnName, cacheName, clusterName, instanceName, body);
+    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs(MsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsWithHttpInfo(body, msgVpnName, cacheName, clusterName, instanceName);
         return resp.getData();
     }
 
     /**
      * Cancel the backup of cached messages from the Cache Instance.
      * Cancel the backup of cached messages from the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Backup Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Cancel Backup Cached Messages action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsWithHttpInfo(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsWithHttpInfo(MsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -2114,16 +2110,16 @@ public class MsgVpnApi {
     /**
      * Cancel the backup of cached messages from the Cache Instance. (asynchronously)
      * Cancel the backup of cached messages from the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Backup Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Cancel Backup Cached Messages action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsAsync(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsAsync(MsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -2144,26 +2140,26 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelBackupCachedMsgsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs
+     * @param body The Cancel Restore Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Cancel Restore Cached Messages action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsCall(MsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/cancelRestoreCachedMsgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -2202,73 +2198,71 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsValidateBeforeCall(MsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Cancel the restore of cached messages to the Cache Instance.
      * Cancel the restore of cached messages to the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Restore Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Cancel Restore Cached Messages action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsWithHttpInfo(msgVpnName, cacheName, clusterName, instanceName, body);
+    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs(MsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsWithHttpInfo(body, msgVpnName, cacheName, clusterName, instanceName);
         return resp.getData();
     }
 
     /**
      * Cancel the restore of cached messages to the Cache Instance.
      * Cancel the restore of cached messages to the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Restore Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Cancel Restore Cached Messages action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsWithHttpInfo(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsWithHttpInfo(MsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -2276,16 +2270,16 @@ public class MsgVpnApi {
     /**
      * Cancel the restore of cached messages to the Cache Instance. (asynchronously)
      * Cancel the restore of cached messages to the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Restore Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Cancel Restore Cached Messages action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsAsync(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsAsync(MsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -2306,26 +2300,26 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceCancelRestoreCachedMsgsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnDistributedCacheClusterInstanceClearEvent
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearEventCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceClearEvent body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearEventCall(MsgVpnDistributedCacheClusterInstanceClearEvent body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/clearEvent"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -2364,73 +2358,71 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearEventValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceClearEvent body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearEventValidateBeforeCall(MsgVpnDistributedCacheClusterInstanceClearEvent body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceClearEvent(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnDistributedCacheClusterInstanceClearEvent(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling doMsgVpnDistributedCacheClusterInstanceClearEvent(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling doMsgVpnDistributedCacheClusterInstanceClearEvent(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling doMsgVpnDistributedCacheClusterInstanceClearEvent(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceClearEvent(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearEventCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearEventCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear an event for the Cache Instance so it can be generated anew.
      * Clear an event for the Cache Instance so it can be generated anew.   Attribute|Required|Deprecated :---|:---:|:---: eventName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceClearEvent(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceClearEvent body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceClearEventWithHttpInfo(msgVpnName, cacheName, clusterName, instanceName, body);
+    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceClearEvent(MsgVpnDistributedCacheClusterInstanceClearEvent body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceClearEventWithHttpInfo(body, msgVpnName, cacheName, clusterName, instanceName);
         return resp.getData();
     }
 
     /**
      * Clear an event for the Cache Instance so it can be generated anew.
      * Clear an event for the Cache Instance so it can be generated anew.   Attribute|Required|Deprecated :---|:---:|:---: eventName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceClearEventWithHttpInfo(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceClearEvent body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearEventValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceClearEventWithHttpInfo(MsgVpnDistributedCacheClusterInstanceClearEvent body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearEventValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -2438,16 +2430,16 @@ public class MsgVpnApi {
     /**
      * Clear an event for the Cache Instance so it can be generated anew. (asynchronously)
      * Clear an event for the Cache Instance so it can be generated anew.   Attribute|Required|Deprecated :---|:---:|:---: eventName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Event action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Clear Event action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearEventAsync(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceClearEvent body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearEventAsync(MsgVpnDistributedCacheClusterInstanceClearEvent body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -2468,26 +2460,26 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearEventValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearEventValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnDistributedCacheClusterInstanceClearStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearStatsCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearStatsCall(MsgVpnDistributedCacheClusterInstanceClearStats body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/clearStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -2526,73 +2518,71 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearStatsValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearStatsValidateBeforeCall(MsgVpnDistributedCacheClusterInstanceClearStats body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceClearStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnDistributedCacheClusterInstanceClearStats(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling doMsgVpnDistributedCacheClusterInstanceClearStats(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling doMsgVpnDistributedCacheClusterInstanceClearStats(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling doMsgVpnDistributedCacheClusterInstanceClearStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceClearStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearStatsCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearStatsCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the statistics for the Cache Instance.
      * Clear the statistics for the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceClearStats(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceClearStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceClearStatsWithHttpInfo(msgVpnName, cacheName, clusterName, instanceName, body);
+    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceClearStats(MsgVpnDistributedCacheClusterInstanceClearStats body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceClearStatsWithHttpInfo(body, msgVpnName, cacheName, clusterName, instanceName);
         return resp.getData();
     }
 
     /**
      * Clear the statistics for the Cache Instance.
      * Clear the statistics for the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceClearStatsWithHttpInfo(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceClearStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearStatsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceClearStatsWithHttpInfo(MsgVpnDistributedCacheClusterInstanceClearStats body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearStatsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -2600,16 +2590,16 @@ public class MsgVpnApi {
     /**
      * Clear the statistics for the Cache Instance. (asynchronously)
      * Clear the statistics for the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearStatsAsync(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceClearStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceClearStatsAsync(MsgVpnDistributedCacheClusterInstanceClearStats body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -2630,26 +2620,26 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearStatsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceClearStatsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnDistributedCacheClusterInstanceDeleteMsgs
+     * @param body The Delete Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Delete Messages action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceDeleteMsgsCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceDeleteMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceDeleteMsgsCall(MsgVpnDistributedCacheClusterInstanceDeleteMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/deleteMsgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -2688,73 +2678,71 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceDeleteMsgsValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceDeleteMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceDeleteMsgsValidateBeforeCall(MsgVpnDistributedCacheClusterInstanceDeleteMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceDeleteMsgs(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnDistributedCacheClusterInstanceDeleteMsgs(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling doMsgVpnDistributedCacheClusterInstanceDeleteMsgs(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling doMsgVpnDistributedCacheClusterInstanceDeleteMsgs(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling doMsgVpnDistributedCacheClusterInstanceDeleteMsgs(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceDeleteMsgs(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceDeleteMsgsCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceDeleteMsgsCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Delete messages covered by the given topic in the Cache Instance.
      * Delete messages covered by the given topic in the Cache Instance.   Attribute|Required|Deprecated :---|:---:|:---: topic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Delete Messages action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceDeleteMsgs(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceDeleteMsgs body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceDeleteMsgsWithHttpInfo(msgVpnName, cacheName, clusterName, instanceName, body);
+    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceDeleteMsgs(MsgVpnDistributedCacheClusterInstanceDeleteMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceDeleteMsgsWithHttpInfo(body, msgVpnName, cacheName, clusterName, instanceName);
         return resp.getData();
     }
 
     /**
      * Delete messages covered by the given topic in the Cache Instance.
      * Delete messages covered by the given topic in the Cache Instance.   Attribute|Required|Deprecated :---|:---:|:---: topic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Delete Messages action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceDeleteMsgsWithHttpInfo(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceDeleteMsgs body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceDeleteMsgsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceDeleteMsgsWithHttpInfo(MsgVpnDistributedCacheClusterInstanceDeleteMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceDeleteMsgsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -2762,16 +2750,16 @@ public class MsgVpnApi {
     /**
      * Delete messages covered by the given topic in the Cache Instance. (asynchronously)
      * Delete messages covered by the given topic in the Cache Instance.   Attribute|Required|Deprecated :---|:---:|:---: topic|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Delete Messages action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceDeleteMsgsAsync(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceDeleteMsgs body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceDeleteMsgsAsync(MsgVpnDistributedCacheClusterInstanceDeleteMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -2792,26 +2780,26 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceDeleteMsgsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceDeleteMsgsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs
+     * @param body The Restore Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Restore Cached Messages action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsCall(MsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/restoreCachedMsgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -2850,73 +2838,71 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsValidateBeforeCall(MsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Restore cached messages for the Cache Instance from disk.
      * Restore cached messages for the Cache Instance from disk.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Restore Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Restore Cached Messages action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsWithHttpInfo(msgVpnName, cacheName, clusterName, instanceName, body);
+    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs(MsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsWithHttpInfo(body, msgVpnName, cacheName, clusterName, instanceName);
         return resp.getData();
     }
 
     /**
      * Restore cached messages for the Cache Instance from disk.
      * Restore cached messages for the Cache Instance from disk.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Restore Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Restore Cached Messages action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsWithHttpInfo(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsWithHttpInfo(MsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -2924,16 +2910,16 @@ public class MsgVpnApi {
     /**
      * Restore cached messages for the Cache Instance from disk. (asynchronously)
      * Restore cached messages for the Cache Instance from disk.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Restore Cached Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Restore Cached Messages action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsAsync(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsAsync(MsgVpnDistributedCacheClusterInstanceRestoreCachedMsgs body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -2954,26 +2940,26 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceRestoreCachedMsgsValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnDistributedCacheClusterInstanceStart
+     * @param body The Start Cache Instance action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Start Cache Instance action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceStartCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceStart body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceStartCall(MsgVpnDistributedCacheClusterInstanceStart body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}/start"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3012,73 +2998,71 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceStartValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceStart body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceStartValidateBeforeCall(MsgVpnDistributedCacheClusterInstanceStart body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceStart(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnDistributedCacheClusterInstanceStart(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling doMsgVpnDistributedCacheClusterInstanceStart(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling doMsgVpnDistributedCacheClusterInstanceStart(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling doMsgVpnDistributedCacheClusterInstanceStart(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnDistributedCacheClusterInstanceStart(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceStartCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceStartCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Start the Cache Instance.
      * Start the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Start Cache Instance action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Start Cache Instance action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceStart(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceStart body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceStartWithHttpInfo(msgVpnName, cacheName, clusterName, instanceName, body);
+    public SempMetaOnlyResponse doMsgVpnDistributedCacheClusterInstanceStart(MsgVpnDistributedCacheClusterInstanceStart body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnDistributedCacheClusterInstanceStartWithHttpInfo(body, msgVpnName, cacheName, clusterName, instanceName);
         return resp.getData();
     }
 
     /**
      * Start the Cache Instance.
      * Start the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Start Cache Instance action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Start Cache Instance action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceStartWithHttpInfo(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceStart body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceStartValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnDistributedCacheClusterInstanceStartWithHttpInfo(MsgVpnDistributedCacheClusterInstanceStart body, String msgVpnName, String cacheName, String clusterName, String instanceName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceStartValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -3086,16 +3070,16 @@ public class MsgVpnApi {
     /**
      * Start the Cache Instance. (asynchronously)
      * Start the Cache Instance.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Start Cache Instance action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param cacheName The name of the Distributed Cache. (required)
      * @param clusterName The name of the Cache Cluster. (required)
      * @param instanceName The name of the Cache Instance. (required)
-     * @param body The Start Cache Instance action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceStartAsync(String msgVpnName, String cacheName, String clusterName, String instanceName, MsgVpnDistributedCacheClusterInstanceStart body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnDistributedCacheClusterInstanceStartAsync(MsgVpnDistributedCacheClusterInstanceStart body, String msgVpnName, String cacheName, String clusterName, String instanceName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -3116,25 +3100,25 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceStartValidateBeforeCall(msgVpnName, cacheName, clusterName, instanceName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnDistributedCacheClusterInstanceStartValidateBeforeCall(body, msgVpnName, cacheName, clusterName, instanceName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnMqttSessionClearStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnMqttSessionClearStatsCall(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, MsgVpnMqttSessionClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnMqttSessionClearStatsCall(MsgVpnMqttSessionClearStats body, String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/mqttSessions/{mqttSessionClientId},{mqttSessionVirtualRouter}/clearStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3172,66 +3156,65 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnMqttSessionClearStatsValidateBeforeCall(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, MsgVpnMqttSessionClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnMqttSessionClearStatsValidateBeforeCall(MsgVpnMqttSessionClearStats body, String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnMqttSessionClearStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnMqttSessionClearStats(Async)");
         }
-        
         // verify the required parameter 'mqttSessionClientId' is set
         if (mqttSessionClientId == null) {
             throw new ApiException("Missing the required parameter 'mqttSessionClientId' when calling doMsgVpnMqttSessionClearStats(Async)");
         }
-        
         // verify the required parameter 'mqttSessionVirtualRouter' is set
         if (mqttSessionVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'mqttSessionVirtualRouter' when calling doMsgVpnMqttSessionClearStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnMqttSessionClearStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnMqttSessionClearStatsCall(msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnMqttSessionClearStatsCall(body, msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the statistics for the MQTT Session.
      * Clear the statistics for the MQTT Session.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnMqttSessionClearStats(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, MsgVpnMqttSessionClearStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnMqttSessionClearStatsWithHttpInfo(msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter, body);
+    public SempMetaOnlyResponse doMsgVpnMqttSessionClearStats(MsgVpnMqttSessionClearStats body, String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnMqttSessionClearStatsWithHttpInfo(body, msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter);
         return resp.getData();
     }
 
     /**
      * Clear the statistics for the MQTT Session.
      * Clear the statistics for the MQTT Session.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnMqttSessionClearStatsWithHttpInfo(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, MsgVpnMqttSessionClearStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnMqttSessionClearStatsValidateBeforeCall(msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnMqttSessionClearStatsWithHttpInfo(MsgVpnMqttSessionClearStats body, String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnMqttSessionClearStatsValidateBeforeCall(body, msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -3239,15 +3222,15 @@ public class MsgVpnApi {
     /**
      * Clear the statistics for the MQTT Session. (asynchronously)
      * Clear the statistics for the MQTT Session.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnMqttSessionClearStatsAsync(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, MsgVpnMqttSessionClearStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnMqttSessionClearStatsAsync(MsgVpnMqttSessionClearStats body, String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -3268,24 +3251,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnMqttSessionClearStatsValidateBeforeCall(msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnMqttSessionClearStatsValidateBeforeCall(body, msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnQueueCancelReplay
+     * @param body The Cancel Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Cancel Replay action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnQueueCancelReplayCall(String msgVpnName, String queueName, MsgVpnQueueCancelReplay body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnQueueCancelReplayCall(MsgVpnQueueCancelReplay body, String msgVpnName, String queueName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/cancelReplay"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3322,59 +3305,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnQueueCancelReplayValidateBeforeCall(String msgVpnName, String queueName, MsgVpnQueueCancelReplay body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnQueueCancelReplayValidateBeforeCall(MsgVpnQueueCancelReplay body, String msgVpnName, String queueName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnQueueCancelReplay(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnQueueCancelReplay(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling doMsgVpnQueueCancelReplay(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnQueueCancelReplay(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnQueueCancelReplayCall(msgVpnName, queueName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnQueueCancelReplayCall(body, msgVpnName, queueName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Cancel the replay of messages to the Queue.
      * Cancel the replay of messages to the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Cancel Replay action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnQueueCancelReplay(String msgVpnName, String queueName, MsgVpnQueueCancelReplay body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnQueueCancelReplayWithHttpInfo(msgVpnName, queueName, body);
+    public SempMetaOnlyResponse doMsgVpnQueueCancelReplay(MsgVpnQueueCancelReplay body, String msgVpnName, String queueName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnQueueCancelReplayWithHttpInfo(body, msgVpnName, queueName);
         return resp.getData();
     }
 
     /**
      * Cancel the replay of messages to the Queue.
      * Cancel the replay of messages to the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Cancel Replay action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnQueueCancelReplayWithHttpInfo(String msgVpnName, String queueName, MsgVpnQueueCancelReplay body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnQueueCancelReplayValidateBeforeCall(msgVpnName, queueName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnQueueCancelReplayWithHttpInfo(MsgVpnQueueCancelReplay body, String msgVpnName, String queueName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnQueueCancelReplayValidateBeforeCall(body, msgVpnName, queueName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -3382,14 +3365,14 @@ public class MsgVpnApi {
     /**
      * Cancel the replay of messages to the Queue. (asynchronously)
      * Cancel the replay of messages to the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Cancel Replay action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnQueueCancelReplayAsync(String msgVpnName, String queueName, MsgVpnQueueCancelReplay body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnQueueCancelReplayAsync(MsgVpnQueueCancelReplay body, String msgVpnName, String queueName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -3410,24 +3393,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnQueueCancelReplayValidateBeforeCall(msgVpnName, queueName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnQueueCancelReplayValidateBeforeCall(body, msgVpnName, queueName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnQueueClearStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnQueueClearStatsCall(String msgVpnName, String queueName, MsgVpnQueueClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnQueueClearStatsCall(MsgVpnQueueClearStats body, String msgVpnName, String queueName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/clearStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3464,59 +3447,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnQueueClearStatsValidateBeforeCall(String msgVpnName, String queueName, MsgVpnQueueClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnQueueClearStatsValidateBeforeCall(MsgVpnQueueClearStats body, String msgVpnName, String queueName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnQueueClearStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnQueueClearStats(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling doMsgVpnQueueClearStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnQueueClearStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnQueueClearStatsCall(msgVpnName, queueName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnQueueClearStatsCall(body, msgVpnName, queueName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the statistics for the Queue.
      * Clear the statistics for the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnQueueClearStats(String msgVpnName, String queueName, MsgVpnQueueClearStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnQueueClearStatsWithHttpInfo(msgVpnName, queueName, body);
+    public SempMetaOnlyResponse doMsgVpnQueueClearStats(MsgVpnQueueClearStats body, String msgVpnName, String queueName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnQueueClearStatsWithHttpInfo(body, msgVpnName, queueName);
         return resp.getData();
     }
 
     /**
      * Clear the statistics for the Queue.
      * Clear the statistics for the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnQueueClearStatsWithHttpInfo(String msgVpnName, String queueName, MsgVpnQueueClearStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnQueueClearStatsValidateBeforeCall(msgVpnName, queueName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnQueueClearStatsWithHttpInfo(MsgVpnQueueClearStats body, String msgVpnName, String queueName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnQueueClearStatsValidateBeforeCall(body, msgVpnName, queueName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -3524,14 +3507,14 @@ public class MsgVpnApi {
     /**
      * Clear the statistics for the Queue. (asynchronously)
      * Clear the statistics for the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnQueueClearStatsAsync(String msgVpnName, String queueName, MsgVpnQueueClearStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnQueueClearStatsAsync(MsgVpnQueueClearStats body, String msgVpnName, String queueName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -3552,25 +3535,25 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnQueueClearStatsValidateBeforeCall(msgVpnName, queueName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnQueueClearStatsValidateBeforeCall(body, msgVpnName, queueName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnQueueMsgDelete
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
      * @param msgId The identifier (ID) of the Message. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnQueueMsgDeleteCall(String msgVpnName, String queueName, String msgId, MsgVpnQueueMsgDelete body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnQueueMsgDeleteCall(MsgVpnQueueMsgDelete body, String msgVpnName, String queueName, String msgId, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/msgs/{msgId}/delete"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3608,66 +3591,65 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnQueueMsgDeleteValidateBeforeCall(String msgVpnName, String queueName, String msgId, MsgVpnQueueMsgDelete body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnQueueMsgDeleteValidateBeforeCall(MsgVpnQueueMsgDelete body, String msgVpnName, String queueName, String msgId, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnQueueMsgDelete(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnQueueMsgDelete(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling doMsgVpnQueueMsgDelete(Async)");
         }
-        
         // verify the required parameter 'msgId' is set
         if (msgId == null) {
             throw new ApiException("Missing the required parameter 'msgId' when calling doMsgVpnQueueMsgDelete(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnQueueMsgDelete(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnQueueMsgDeleteCall(msgVpnName, queueName, msgId, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnQueueMsgDeleteCall(body, msgVpnName, queueName, msgId, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Delete the Message from the Queue.
      * Delete the Message from the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
      * @param msgId The identifier (ID) of the Message. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnQueueMsgDelete(String msgVpnName, String queueName, String msgId, MsgVpnQueueMsgDelete body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnQueueMsgDeleteWithHttpInfo(msgVpnName, queueName, msgId, body);
+    public SempMetaOnlyResponse doMsgVpnQueueMsgDelete(MsgVpnQueueMsgDelete body, String msgVpnName, String queueName, String msgId) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnQueueMsgDeleteWithHttpInfo(body, msgVpnName, queueName, msgId);
         return resp.getData();
     }
 
     /**
      * Delete the Message from the Queue.
      * Delete the Message from the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
      * @param msgId The identifier (ID) of the Message. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnQueueMsgDeleteWithHttpInfo(String msgVpnName, String queueName, String msgId, MsgVpnQueueMsgDelete body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnQueueMsgDeleteValidateBeforeCall(msgVpnName, queueName, msgId, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnQueueMsgDeleteWithHttpInfo(MsgVpnQueueMsgDelete body, String msgVpnName, String queueName, String msgId) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnQueueMsgDeleteValidateBeforeCall(body, msgVpnName, queueName, msgId, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -3675,15 +3657,15 @@ public class MsgVpnApi {
     /**
      * Delete the Message from the Queue. (asynchronously)
      * Delete the Message from the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
      * @param msgId The identifier (ID) of the Message. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnQueueMsgDeleteAsync(String msgVpnName, String queueName, String msgId, MsgVpnQueueMsgDelete body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnQueueMsgDeleteAsync(MsgVpnQueueMsgDelete body, String msgVpnName, String queueName, String msgId, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -3704,24 +3686,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnQueueMsgDeleteValidateBeforeCall(msgVpnName, queueName, msgId, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnQueueMsgDeleteValidateBeforeCall(body, msgVpnName, queueName, msgId, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnQueueStartReplay
+     * @param body The Start Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Start Replay action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnQueueStartReplayCall(String msgVpnName, String queueName, MsgVpnQueueStartReplay body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnQueueStartReplayCall(MsgVpnQueueStartReplay body, String msgVpnName, String queueName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/startReplay"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3758,59 +3740,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnQueueStartReplayValidateBeforeCall(String msgVpnName, String queueName, MsgVpnQueueStartReplay body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnQueueStartReplayValidateBeforeCall(MsgVpnQueueStartReplay body, String msgVpnName, String queueName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnQueueStartReplay(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnQueueStartReplay(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling doMsgVpnQueueStartReplay(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnQueueStartReplay(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnQueueStartReplayCall(msgVpnName, queueName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnQueueStartReplayCall(body, msgVpnName, queueName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Start the replay of messages to the Queue.
      * Start the replay of messages to the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Start Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Start Replay action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnQueueStartReplay(String msgVpnName, String queueName, MsgVpnQueueStartReplay body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnQueueStartReplayWithHttpInfo(msgVpnName, queueName, body);
+    public SempMetaOnlyResponse doMsgVpnQueueStartReplay(MsgVpnQueueStartReplay body, String msgVpnName, String queueName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnQueueStartReplayWithHttpInfo(body, msgVpnName, queueName);
         return resp.getData();
     }
 
     /**
      * Start the replay of messages to the Queue.
      * Start the replay of messages to the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Start Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Start Replay action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnQueueStartReplayWithHttpInfo(String msgVpnName, String queueName, MsgVpnQueueStartReplay body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnQueueStartReplayValidateBeforeCall(msgVpnName, queueName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnQueueStartReplayWithHttpInfo(MsgVpnQueueStartReplay body, String msgVpnName, String queueName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnQueueStartReplayValidateBeforeCall(body, msgVpnName, queueName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -3818,14 +3800,14 @@ public class MsgVpnApi {
     /**
      * Start the replay of messages to the Queue. (asynchronously)
      * Start the replay of messages to the Queue.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Start Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param queueName The name of the Queue. (required)
-     * @param body The Start Replay action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnQueueStartReplayAsync(String msgVpnName, String queueName, MsgVpnQueueStartReplay body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnQueueStartReplayAsync(MsgVpnQueueStartReplay body, String msgVpnName, String queueName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -3846,24 +3828,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnQueueStartReplayValidateBeforeCall(msgVpnName, queueName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnQueueStartReplayValidateBeforeCall(body, msgVpnName, queueName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnReplayLogTrimLoggedMsgs
+     * @param body The Trim Logged Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param replayLogName The name of the Replay Log. (required)
-     * @param body The Trim Logged Messages action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnReplayLogTrimLoggedMsgsCall(String msgVpnName, String replayLogName, MsgVpnReplayLogTrimLoggedMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnReplayLogTrimLoggedMsgsCall(MsgVpnReplayLogTrimLoggedMsgs body, String msgVpnName, String replayLogName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/replayLogs/{replayLogName}/trimLoggedMsgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -3900,59 +3882,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnReplayLogTrimLoggedMsgsValidateBeforeCall(String msgVpnName, String replayLogName, MsgVpnReplayLogTrimLoggedMsgs body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnReplayLogTrimLoggedMsgsValidateBeforeCall(MsgVpnReplayLogTrimLoggedMsgs body, String msgVpnName, String replayLogName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnReplayLogTrimLoggedMsgs(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnReplayLogTrimLoggedMsgs(Async)");
         }
-        
         // verify the required parameter 'replayLogName' is set
         if (replayLogName == null) {
             throw new ApiException("Missing the required parameter 'replayLogName' when calling doMsgVpnReplayLogTrimLoggedMsgs(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnReplayLogTrimLoggedMsgs(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnReplayLogTrimLoggedMsgsCall(msgVpnName, replayLogName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnReplayLogTrimLoggedMsgsCall(body, msgVpnName, replayLogName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Trim (delete) messages from the Replay Log.
      * Trim (delete) messages from the Replay Log.   Attribute|Required|Deprecated :---|:---:|:---: olderThanTime|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Trim Logged Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param replayLogName The name of the Replay Log. (required)
-     * @param body The Trim Logged Messages action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnReplayLogTrimLoggedMsgs(String msgVpnName, String replayLogName, MsgVpnReplayLogTrimLoggedMsgs body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnReplayLogTrimLoggedMsgsWithHttpInfo(msgVpnName, replayLogName, body);
+    public SempMetaOnlyResponse doMsgVpnReplayLogTrimLoggedMsgs(MsgVpnReplayLogTrimLoggedMsgs body, String msgVpnName, String replayLogName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnReplayLogTrimLoggedMsgsWithHttpInfo(body, msgVpnName, replayLogName);
         return resp.getData();
     }
 
     /**
      * Trim (delete) messages from the Replay Log.
      * Trim (delete) messages from the Replay Log.   Attribute|Required|Deprecated :---|:---:|:---: olderThanTime|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Trim Logged Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param replayLogName The name of the Replay Log. (required)
-     * @param body The Trim Logged Messages action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnReplayLogTrimLoggedMsgsWithHttpInfo(String msgVpnName, String replayLogName, MsgVpnReplayLogTrimLoggedMsgs body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnReplayLogTrimLoggedMsgsValidateBeforeCall(msgVpnName, replayLogName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnReplayLogTrimLoggedMsgsWithHttpInfo(MsgVpnReplayLogTrimLoggedMsgs body, String msgVpnName, String replayLogName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnReplayLogTrimLoggedMsgsValidateBeforeCall(body, msgVpnName, replayLogName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -3960,14 +3942,14 @@ public class MsgVpnApi {
     /**
      * Trim (delete) messages from the Replay Log. (asynchronously)
      * Trim (delete) messages from the Replay Log.   Attribute|Required|Deprecated :---|:---:|:---: olderThanTime|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Trim Logged Messages action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param replayLogName The name of the Replay Log. (required)
-     * @param body The Trim Logged Messages action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnReplayLogTrimLoggedMsgsAsync(String msgVpnName, String replayLogName, MsgVpnReplayLogTrimLoggedMsgs body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnReplayLogTrimLoggedMsgsAsync(MsgVpnReplayLogTrimLoggedMsgs body, String msgVpnName, String replayLogName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -3988,25 +3970,25 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnReplayLogTrimLoggedMsgsValidateBeforeCall(msgVpnName, replayLogName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnReplayLogTrimLoggedMsgsValidateBeforeCall(body, msgVpnName, replayLogName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnRestDeliveryPointRestConsumerClearStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param restDeliveryPointName The name of the REST Delivery Point. (required)
      * @param restConsumerName The name of the REST Consumer. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnRestDeliveryPointRestConsumerClearStatsCall(String msgVpnName, String restDeliveryPointName, String restConsumerName, MsgVpnRestDeliveryPointRestConsumerClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnRestDeliveryPointRestConsumerClearStatsCall(MsgVpnRestDeliveryPointRestConsumerClearStats body, String msgVpnName, String restDeliveryPointName, String restConsumerName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints/{restDeliveryPointName}/restConsumers/{restConsumerName}/clearStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4044,66 +4026,65 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnRestDeliveryPointRestConsumerClearStatsValidateBeforeCall(String msgVpnName, String restDeliveryPointName, String restConsumerName, MsgVpnRestDeliveryPointRestConsumerClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnRestDeliveryPointRestConsumerClearStatsValidateBeforeCall(MsgVpnRestDeliveryPointRestConsumerClearStats body, String msgVpnName, String restDeliveryPointName, String restConsumerName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnRestDeliveryPointRestConsumerClearStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnRestDeliveryPointRestConsumerClearStats(Async)");
         }
-        
         // verify the required parameter 'restDeliveryPointName' is set
         if (restDeliveryPointName == null) {
             throw new ApiException("Missing the required parameter 'restDeliveryPointName' when calling doMsgVpnRestDeliveryPointRestConsumerClearStats(Async)");
         }
-        
         // verify the required parameter 'restConsumerName' is set
         if (restConsumerName == null) {
             throw new ApiException("Missing the required parameter 'restConsumerName' when calling doMsgVpnRestDeliveryPointRestConsumerClearStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnRestDeliveryPointRestConsumerClearStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnRestDeliveryPointRestConsumerClearStatsCall(msgVpnName, restDeliveryPointName, restConsumerName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnRestDeliveryPointRestConsumerClearStatsCall(body, msgVpnName, restDeliveryPointName, restConsumerName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the statistics for the REST Consumer.
      * Clear the statistics for the REST Consumer.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param restDeliveryPointName The name of the REST Delivery Point. (required)
      * @param restConsumerName The name of the REST Consumer. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnRestDeliveryPointRestConsumerClearStats(String msgVpnName, String restDeliveryPointName, String restConsumerName, MsgVpnRestDeliveryPointRestConsumerClearStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnRestDeliveryPointRestConsumerClearStatsWithHttpInfo(msgVpnName, restDeliveryPointName, restConsumerName, body);
+    public SempMetaOnlyResponse doMsgVpnRestDeliveryPointRestConsumerClearStats(MsgVpnRestDeliveryPointRestConsumerClearStats body, String msgVpnName, String restDeliveryPointName, String restConsumerName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnRestDeliveryPointRestConsumerClearStatsWithHttpInfo(body, msgVpnName, restDeliveryPointName, restConsumerName);
         return resp.getData();
     }
 
     /**
      * Clear the statistics for the REST Consumer.
      * Clear the statistics for the REST Consumer.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param restDeliveryPointName The name of the REST Delivery Point. (required)
      * @param restConsumerName The name of the REST Consumer. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnRestDeliveryPointRestConsumerClearStatsWithHttpInfo(String msgVpnName, String restDeliveryPointName, String restConsumerName, MsgVpnRestDeliveryPointRestConsumerClearStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnRestDeliveryPointRestConsumerClearStatsValidateBeforeCall(msgVpnName, restDeliveryPointName, restConsumerName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnRestDeliveryPointRestConsumerClearStatsWithHttpInfo(MsgVpnRestDeliveryPointRestConsumerClearStats body, String msgVpnName, String restDeliveryPointName, String restConsumerName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnRestDeliveryPointRestConsumerClearStatsValidateBeforeCall(body, msgVpnName, restDeliveryPointName, restConsumerName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -4111,15 +4092,15 @@ public class MsgVpnApi {
     /**
      * Clear the statistics for the REST Consumer. (asynchronously)
      * Clear the statistics for the REST Consumer.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param restDeliveryPointName The name of the REST Delivery Point. (required)
      * @param restConsumerName The name of the REST Consumer. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnRestDeliveryPointRestConsumerClearStatsAsync(String msgVpnName, String restDeliveryPointName, String restConsumerName, MsgVpnRestDeliveryPointRestConsumerClearStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnRestDeliveryPointRestConsumerClearStatsAsync(MsgVpnRestDeliveryPointRestConsumerClearStats body, String msgVpnName, String restDeliveryPointName, String restConsumerName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -4140,24 +4121,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnRestDeliveryPointRestConsumerClearStatsValidateBeforeCall(msgVpnName, restDeliveryPointName, restConsumerName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnRestDeliveryPointRestConsumerClearStatsValidateBeforeCall(body, msgVpnName, restDeliveryPointName, restConsumerName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnTopicEndpointCancelReplay
+     * @param body The Cancel Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Cancel Replay action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTopicEndpointCancelReplayCall(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointCancelReplay body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTopicEndpointCancelReplayCall(MsgVpnTopicEndpointCancelReplay body, String msgVpnName, String topicEndpointName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/cancelReplay"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4194,59 +4175,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnTopicEndpointCancelReplayValidateBeforeCall(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointCancelReplay body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnTopicEndpointCancelReplayValidateBeforeCall(MsgVpnTopicEndpointCancelReplay body, String msgVpnName, String topicEndpointName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTopicEndpointCancelReplay(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnTopicEndpointCancelReplay(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling doMsgVpnTopicEndpointCancelReplay(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTopicEndpointCancelReplay(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointCancelReplayCall(msgVpnName, topicEndpointName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointCancelReplayCall(body, msgVpnName, topicEndpointName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Cancel the replay of messages to the Topic Endpoint.
      * Cancel the replay of messages to the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Cancel Replay action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnTopicEndpointCancelReplay(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointCancelReplay body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTopicEndpointCancelReplayWithHttpInfo(msgVpnName, topicEndpointName, body);
+    public SempMetaOnlyResponse doMsgVpnTopicEndpointCancelReplay(MsgVpnTopicEndpointCancelReplay body, String msgVpnName, String topicEndpointName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTopicEndpointCancelReplayWithHttpInfo(body, msgVpnName, topicEndpointName);
         return resp.getData();
     }
 
     /**
      * Cancel the replay of messages to the Topic Endpoint.
      * Cancel the replay of messages to the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Cancel Replay action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTopicEndpointCancelReplayWithHttpInfo(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointCancelReplay body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointCancelReplayValidateBeforeCall(msgVpnName, topicEndpointName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTopicEndpointCancelReplayWithHttpInfo(MsgVpnTopicEndpointCancelReplay body, String msgVpnName, String topicEndpointName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointCancelReplayValidateBeforeCall(body, msgVpnName, topicEndpointName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -4254,14 +4235,14 @@ public class MsgVpnApi {
     /**
      * Cancel the replay of messages to the Topic Endpoint. (asynchronously)
      * Cancel the replay of messages to the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Cancel Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Cancel Replay action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTopicEndpointCancelReplayAsync(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointCancelReplay body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTopicEndpointCancelReplayAsync(MsgVpnTopicEndpointCancelReplay body, String msgVpnName, String topicEndpointName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -4282,24 +4263,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointCancelReplayValidateBeforeCall(msgVpnName, topicEndpointName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointCancelReplayValidateBeforeCall(body, msgVpnName, topicEndpointName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnTopicEndpointClearStats
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTopicEndpointClearStatsCall(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTopicEndpointClearStatsCall(MsgVpnTopicEndpointClearStats body, String msgVpnName, String topicEndpointName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/clearStats"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4336,59 +4317,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnTopicEndpointClearStatsValidateBeforeCall(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointClearStats body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnTopicEndpointClearStatsValidateBeforeCall(MsgVpnTopicEndpointClearStats body, String msgVpnName, String topicEndpointName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTopicEndpointClearStats(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnTopicEndpointClearStats(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling doMsgVpnTopicEndpointClearStats(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTopicEndpointClearStats(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointClearStatsCall(msgVpnName, topicEndpointName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointClearStatsCall(body, msgVpnName, topicEndpointName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Clear the statistics for the Topic Endpoint.
      * Clear the statistics for the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnTopicEndpointClearStats(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointClearStats body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTopicEndpointClearStatsWithHttpInfo(msgVpnName, topicEndpointName, body);
+    public SempMetaOnlyResponse doMsgVpnTopicEndpointClearStats(MsgVpnTopicEndpointClearStats body, String msgVpnName, String topicEndpointName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTopicEndpointClearStatsWithHttpInfo(body, msgVpnName, topicEndpointName);
         return resp.getData();
     }
 
     /**
      * Clear the statistics for the Topic Endpoint.
      * Clear the statistics for the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTopicEndpointClearStatsWithHttpInfo(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointClearStats body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointClearStatsValidateBeforeCall(msgVpnName, topicEndpointName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTopicEndpointClearStatsWithHttpInfo(MsgVpnTopicEndpointClearStats body, String msgVpnName, String topicEndpointName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointClearStatsValidateBeforeCall(body, msgVpnName, topicEndpointName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -4396,14 +4377,14 @@ public class MsgVpnApi {
     /**
      * Clear the statistics for the Topic Endpoint. (asynchronously)
      * Clear the statistics for the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Clear Stats action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Clear Stats action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTopicEndpointClearStatsAsync(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointClearStats body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTopicEndpointClearStatsAsync(MsgVpnTopicEndpointClearStats body, String msgVpnName, String topicEndpointName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -4424,25 +4405,25 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointClearStatsValidateBeforeCall(msgVpnName, topicEndpointName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointClearStatsValidateBeforeCall(body, msgVpnName, topicEndpointName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnTopicEndpointMsgDelete
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
      * @param msgId The identifier (ID) of the Message. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTopicEndpointMsgDeleteCall(String msgVpnName, String topicEndpointName, String msgId, MsgVpnTopicEndpointMsgDelete body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTopicEndpointMsgDeleteCall(MsgVpnTopicEndpointMsgDelete body, String msgVpnName, String topicEndpointName, String msgId, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/msgs/{msgId}/delete"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4480,66 +4461,65 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnTopicEndpointMsgDeleteValidateBeforeCall(String msgVpnName, String topicEndpointName, String msgId, MsgVpnTopicEndpointMsgDelete body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnTopicEndpointMsgDeleteValidateBeforeCall(MsgVpnTopicEndpointMsgDelete body, String msgVpnName, String topicEndpointName, String msgId, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTopicEndpointMsgDelete(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnTopicEndpointMsgDelete(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling doMsgVpnTopicEndpointMsgDelete(Async)");
         }
-        
         // verify the required parameter 'msgId' is set
         if (msgId == null) {
             throw new ApiException("Missing the required parameter 'msgId' when calling doMsgVpnTopicEndpointMsgDelete(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTopicEndpointMsgDelete(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointMsgDeleteCall(msgVpnName, topicEndpointName, msgId, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointMsgDeleteCall(body, msgVpnName, topicEndpointName, msgId, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Delete the Message from the Topic Endpoint.
      * Delete the Message from the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
      * @param msgId The identifier (ID) of the Message. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnTopicEndpointMsgDelete(String msgVpnName, String topicEndpointName, String msgId, MsgVpnTopicEndpointMsgDelete body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTopicEndpointMsgDeleteWithHttpInfo(msgVpnName, topicEndpointName, msgId, body);
+    public SempMetaOnlyResponse doMsgVpnTopicEndpointMsgDelete(MsgVpnTopicEndpointMsgDelete body, String msgVpnName, String topicEndpointName, String msgId) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTopicEndpointMsgDeleteWithHttpInfo(body, msgVpnName, topicEndpointName, msgId);
         return resp.getData();
     }
 
     /**
      * Delete the Message from the Topic Endpoint.
      * Delete the Message from the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
      * @param msgId The identifier (ID) of the Message. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTopicEndpointMsgDeleteWithHttpInfo(String msgVpnName, String topicEndpointName, String msgId, MsgVpnTopicEndpointMsgDelete body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointMsgDeleteValidateBeforeCall(msgVpnName, topicEndpointName, msgId, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTopicEndpointMsgDeleteWithHttpInfo(MsgVpnTopicEndpointMsgDelete body, String msgVpnName, String topicEndpointName, String msgId) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointMsgDeleteValidateBeforeCall(body, msgVpnName, topicEndpointName, msgId, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -4547,15 +4527,15 @@ public class MsgVpnApi {
     /**
      * Delete the Message from the Topic Endpoint. (asynchronously)
      * Delete the Message from the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
      * @param msgId The identifier (ID) of the Message. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTopicEndpointMsgDeleteAsync(String msgVpnName, String topicEndpointName, String msgId, MsgVpnTopicEndpointMsgDelete body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTopicEndpointMsgDeleteAsync(MsgVpnTopicEndpointMsgDelete body, String msgVpnName, String topicEndpointName, String msgId, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -4576,24 +4556,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointMsgDeleteValidateBeforeCall(msgVpnName, topicEndpointName, msgId, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointMsgDeleteValidateBeforeCall(body, msgVpnName, topicEndpointName, msgId, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnTopicEndpointStartReplay
+     * @param body The Start Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Start Replay action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTopicEndpointStartReplayCall(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointStartReplay body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTopicEndpointStartReplayCall(MsgVpnTopicEndpointStartReplay body, String msgVpnName, String topicEndpointName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/startReplay"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4630,59 +4610,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnTopicEndpointStartReplayValidateBeforeCall(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointStartReplay body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnTopicEndpointStartReplayValidateBeforeCall(MsgVpnTopicEndpointStartReplay body, String msgVpnName, String topicEndpointName, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTopicEndpointStartReplay(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnTopicEndpointStartReplay(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling doMsgVpnTopicEndpointStartReplay(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTopicEndpointStartReplay(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointStartReplayCall(msgVpnName, topicEndpointName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointStartReplayCall(body, msgVpnName, topicEndpointName, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Start the replay of messages to the Topic Endpoint.
      * Start the replay of messages to the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Start Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Start Replay action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnTopicEndpointStartReplay(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointStartReplay body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTopicEndpointStartReplayWithHttpInfo(msgVpnName, topicEndpointName, body);
+    public SempMetaOnlyResponse doMsgVpnTopicEndpointStartReplay(MsgVpnTopicEndpointStartReplay body, String msgVpnName, String topicEndpointName) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTopicEndpointStartReplayWithHttpInfo(body, msgVpnName, topicEndpointName);
         return resp.getData();
     }
 
     /**
      * Start the replay of messages to the Topic Endpoint.
      * Start the replay of messages to the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Start Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Start Replay action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTopicEndpointStartReplayWithHttpInfo(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointStartReplay body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointStartReplayValidateBeforeCall(msgVpnName, topicEndpointName, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTopicEndpointStartReplayWithHttpInfo(MsgVpnTopicEndpointStartReplay body, String msgVpnName, String topicEndpointName) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointStartReplayValidateBeforeCall(body, msgVpnName, topicEndpointName, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -4690,14 +4670,14 @@ public class MsgVpnApi {
     /**
      * Start the replay of messages to the Topic Endpoint. (asynchronously)
      * Start the replay of messages to the Topic Endpoint.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.11.
+     * @param body The Start Replay action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param topicEndpointName The name of the Topic Endpoint. (required)
-     * @param body The Start Replay action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTopicEndpointStartReplayAsync(String msgVpnName, String topicEndpointName, MsgVpnTopicEndpointStartReplay body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTopicEndpointStartReplayAsync(MsgVpnTopicEndpointStartReplay body, String msgVpnName, String topicEndpointName, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -4718,24 +4698,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointStartReplayValidateBeforeCall(msgVpnName, topicEndpointName, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTopicEndpointStartReplayValidateBeforeCall(body, msgVpnName, topicEndpointName, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnTransactionCommit
+     * @param body The Commit action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Commit action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTransactionCommitCall(String msgVpnName, String xid, MsgVpnTransactionCommit body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTransactionCommitCall(MsgVpnTransactionCommit body, String msgVpnName, String xid, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/transactions/{xid}/commit"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4772,59 +4752,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnTransactionCommitValidateBeforeCall(String msgVpnName, String xid, MsgVpnTransactionCommit body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnTransactionCommitValidateBeforeCall(MsgVpnTransactionCommit body, String msgVpnName, String xid, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTransactionCommit(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnTransactionCommit(Async)");
         }
-        
         // verify the required parameter 'xid' is set
         if (xid == null) {
             throw new ApiException("Missing the required parameter 'xid' when calling doMsgVpnTransactionCommit(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTransactionCommit(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnTransactionCommitCall(msgVpnName, xid, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTransactionCommitCall(body, msgVpnName, xid, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Commit the Transaction.
      * Commit the Transaction.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Commit action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Commit action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnTransactionCommit(String msgVpnName, String xid, MsgVpnTransactionCommit body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTransactionCommitWithHttpInfo(msgVpnName, xid, body);
+    public SempMetaOnlyResponse doMsgVpnTransactionCommit(MsgVpnTransactionCommit body, String msgVpnName, String xid) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTransactionCommitWithHttpInfo(body, msgVpnName, xid);
         return resp.getData();
     }
 
     /**
      * Commit the Transaction.
      * Commit the Transaction.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Commit action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Commit action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTransactionCommitWithHttpInfo(String msgVpnName, String xid, MsgVpnTransactionCommit body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnTransactionCommitValidateBeforeCall(msgVpnName, xid, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTransactionCommitWithHttpInfo(MsgVpnTransactionCommit body, String msgVpnName, String xid) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnTransactionCommitValidateBeforeCall(body, msgVpnName, xid, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -4832,14 +4812,14 @@ public class MsgVpnApi {
     /**
      * Commit the Transaction. (asynchronously)
      * Commit the Transaction.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Commit action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Commit action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTransactionCommitAsync(String msgVpnName, String xid, MsgVpnTransactionCommit body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTransactionCommitAsync(MsgVpnTransactionCommit body, String msgVpnName, String xid, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -4860,24 +4840,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnTransactionCommitValidateBeforeCall(msgVpnName, xid, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTransactionCommitValidateBeforeCall(body, msgVpnName, xid, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnTransactionDelete
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTransactionDeleteCall(String msgVpnName, String xid, MsgVpnTransactionDelete body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTransactionDeleteCall(MsgVpnTransactionDelete body, String msgVpnName, String xid, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/transactions/{xid}/delete"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -4914,59 +4894,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnTransactionDeleteValidateBeforeCall(String msgVpnName, String xid, MsgVpnTransactionDelete body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnTransactionDeleteValidateBeforeCall(MsgVpnTransactionDelete body, String msgVpnName, String xid, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTransactionDelete(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnTransactionDelete(Async)");
         }
-        
         // verify the required parameter 'xid' is set
         if (xid == null) {
             throw new ApiException("Missing the required parameter 'xid' when calling doMsgVpnTransactionDelete(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTransactionDelete(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnTransactionDeleteCall(msgVpnName, xid, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTransactionDeleteCall(body, msgVpnName, xid, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Delete the Transaction.
      * Delete the Transaction.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnTransactionDelete(String msgVpnName, String xid, MsgVpnTransactionDelete body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTransactionDeleteWithHttpInfo(msgVpnName, xid, body);
+    public SempMetaOnlyResponse doMsgVpnTransactionDelete(MsgVpnTransactionDelete body, String msgVpnName, String xid) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTransactionDeleteWithHttpInfo(body, msgVpnName, xid);
         return resp.getData();
     }
 
     /**
      * Delete the Transaction.
      * Delete the Transaction.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTransactionDeleteWithHttpInfo(String msgVpnName, String xid, MsgVpnTransactionDelete body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnTransactionDeleteValidateBeforeCall(msgVpnName, xid, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTransactionDeleteWithHttpInfo(MsgVpnTransactionDelete body, String msgVpnName, String xid) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnTransactionDeleteValidateBeforeCall(body, msgVpnName, xid, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -4974,14 +4954,14 @@ public class MsgVpnApi {
     /**
      * Delete the Transaction. (asynchronously)
      * Delete the Transaction.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Delete action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Delete action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTransactionDeleteAsync(String msgVpnName, String xid, MsgVpnTransactionDelete body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTransactionDeleteAsync(MsgVpnTransactionDelete body, String msgVpnName, String xid, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -5002,24 +4982,24 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnTransactionDeleteValidateBeforeCall(msgVpnName, xid, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTransactionDeleteValidateBeforeCall(body, msgVpnName, xid, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
     }
     /**
      * Build call for doMsgVpnTransactionRollback
+     * @param body The Rollback action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Rollback action&#39;s attributes. (required)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTransactionRollbackCall(String msgVpnName, String xid, MsgVpnTransactionRollback body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTransactionRollbackCall(MsgVpnTransactionRollback body, String msgVpnName, String xid, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = body;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/transactions/{xid}/rollback"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -5056,59 +5036,59 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "PUT", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call doMsgVpnTransactionRollbackValidateBeforeCall(String msgVpnName, String xid, MsgVpnTransactionRollback body, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call doMsgVpnTransactionRollbackValidateBeforeCall(MsgVpnTransactionRollback body, String msgVpnName, String xid, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+        // verify the required parameter 'body' is set
+        if (body == null) {
+            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTransactionRollback(Async)");
+        }
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling doMsgVpnTransactionRollback(Async)");
         }
-        
         // verify the required parameter 'xid' is set
         if (xid == null) {
             throw new ApiException("Missing the required parameter 'xid' when calling doMsgVpnTransactionRollback(Async)");
         }
         
-        // verify the required parameter 'body' is set
-        if (body == null) {
-            throw new ApiException("Missing the required parameter 'body' when calling doMsgVpnTransactionRollback(Async)");
-        }
-        
-
-        com.squareup.okhttp.Call call = doMsgVpnTransactionRollbackCall(msgVpnName, xid, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTransactionRollbackCall(body, msgVpnName, xid, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Rollback the Transaction.
      * Rollback the Transaction.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Rollback action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Rollback action&#39;s attributes. (required)
      * @return SempMetaOnlyResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public SempMetaOnlyResponse doMsgVpnTransactionRollback(String msgVpnName, String xid, MsgVpnTransactionRollback body) throws ApiException {
-        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTransactionRollbackWithHttpInfo(msgVpnName, xid, body);
+    public SempMetaOnlyResponse doMsgVpnTransactionRollback(MsgVpnTransactionRollback body, String msgVpnName, String xid) throws ApiException {
+        ApiResponse<SempMetaOnlyResponse> resp = doMsgVpnTransactionRollbackWithHttpInfo(body, msgVpnName, xid);
         return resp.getData();
     }
 
     /**
      * Rollback the Transaction.
      * Rollback the Transaction.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Rollback action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Rollback action&#39;s attributes. (required)
      * @return ApiResponse&lt;SempMetaOnlyResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTransactionRollbackWithHttpInfo(String msgVpnName, String xid, MsgVpnTransactionRollback body) throws ApiException {
-        com.squareup.okhttp.Call call = doMsgVpnTransactionRollbackValidateBeforeCall(msgVpnName, xid, body, null, null);
+    public ApiResponse<SempMetaOnlyResponse> doMsgVpnTransactionRollbackWithHttpInfo(MsgVpnTransactionRollback body, String msgVpnName, String xid) throws ApiException {
+        com.squareup.okhttp.Call call = doMsgVpnTransactionRollbackValidateBeforeCall(body, msgVpnName, xid, null, null);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -5116,14 +5096,14 @@ public class MsgVpnApi {
     /**
      * Rollback the Transaction. (asynchronously)
      * Rollback the Transaction.    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-write\&quot; is required to perform this operation.  This has been available since 2.12.
+     * @param body The Rollback action&#x27;s attributes. (required)
      * @param msgVpnName The name of the Message VPN. (required)
      * @param xid The identifier (ID) of the Transaction. (required)
-     * @param body The Rollback action&#39;s attributes. (required)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call doMsgVpnTransactionRollbackAsync(String msgVpnName, String xid, MsgVpnTransactionRollback body, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call doMsgVpnTransactionRollbackAsync(MsgVpnTransactionRollback body, String msgVpnName, String xid, final ApiCallback<SempMetaOnlyResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -5144,7 +5124,7 @@ public class MsgVpnApi {
             };
         }
 
-        com.squareup.okhttp.Call call = doMsgVpnTransactionRollbackValidateBeforeCall(msgVpnName, xid, body, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = doMsgVpnTransactionRollbackValidateBeforeCall(body, msgVpnName, xid, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<SempMetaOnlyResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
@@ -5160,7 +5140,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnCall(String msgVpnName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -5181,7 +5161,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5198,27 +5178,29 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnValidateBeforeCall(String msgVpnName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpn(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnCall(msgVpnName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a Message VPN object.
-     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return MsgVpnResponse
@@ -5231,7 +5213,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Message VPN object.
-     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;MsgVpnResponse&gt;
@@ -5245,7 +5227,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Message VPN object. (asynchronously)
-     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Message VPN object.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param callback The callback to be executed when the API call finishes
@@ -5290,7 +5272,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAuthenticationOauthProviderCall(String msgVpnName, String oauthProviderName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/authenticationOauthProviders/{oauthProviderName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -5312,7 +5294,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5329,32 +5311,33 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAuthenticationOauthProviderValidateBeforeCall(String msgVpnName, String oauthProviderName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAuthenticationOauthProvider(Async)");
         }
-        
         // verify the required parameter 'oauthProviderName' is set
         if (oauthProviderName == null) {
             throw new ApiException("Missing the required parameter 'oauthProviderName' when calling getMsgVpnAuthenticationOauthProvider(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAuthenticationOauthProviderCall(msgVpnName, oauthProviderName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get an OAuth Provider object.
-     * Get an OAuth Provider object.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get an OAuth Provider object.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param oauthProviderName The name of the OAuth Provider. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -5368,7 +5351,7 @@ public class MsgVpnApi {
 
     /**
      * Get an OAuth Provider object.
-     * Get an OAuth Provider object.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get an OAuth Provider object.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param oauthProviderName The name of the OAuth Provider. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -5383,7 +5366,7 @@ public class MsgVpnApi {
 
     /**
      * Get an OAuth Provider object. (asynchronously)
-     * Get an OAuth Provider object.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get an OAuth Provider object.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param oauthProviderName The name of the OAuth Provider. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -5431,7 +5414,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAuthenticationOauthProvidersCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/authenticationOauthProviders"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -5458,7 +5441,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5475,27 +5458,29 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAuthenticationOauthProvidersValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAuthenticationOauthProviders(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAuthenticationOauthProvidersCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of OAuth Provider objects.
-     * Get a list of OAuth Provider objects.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get a list of OAuth Provider objects.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -5511,7 +5496,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of OAuth Provider objects.
-     * Get a list of OAuth Provider objects.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get a list of OAuth Provider objects.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -5528,7 +5513,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of OAuth Provider objects. (asynchronously)
-     * Get a list of OAuth Provider objects.  OAuth providers.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
+     * Get a list of OAuth Provider objects.  OAuth Providers contain information about the issuer of an OAuth token that is needed to validate the token and derive a client username from it.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| oauthProviderName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.13.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -5577,7 +5562,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges/{bridgeName},{bridgeVirtualRouter}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -5600,7 +5585,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5617,32 +5602,32 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgeValidateBeforeCall(String msgVpnName, String bridgeName, String bridgeVirtualRouter, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridge(Async)");
         }
-        
         // verify the required parameter 'bridgeName' is set
         if (bridgeName == null) {
             throw new ApiException("Missing the required parameter 'bridgeName' when calling getMsgVpnBridge(Async)");
         }
-        
         // verify the required parameter 'bridgeVirtualRouter' is set
         if (bridgeVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'bridgeVirtualRouter' when calling getMsgVpnBridge(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgeCall(msgVpnName, bridgeName, bridgeVirtualRouter, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -5727,7 +5712,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnBridgesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/bridges"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -5754,7 +5739,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5771,22 +5756,24 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnBridgesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnBridges(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnBridgesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -5872,7 +5859,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientCall(String msgVpnName, String clientName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -5894,7 +5881,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -5911,27 +5898,28 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientValidateBeforeCall(String msgVpnName, String clientName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClient(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClient(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientCall(msgVpnName, clientName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6012,7 +6000,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientTransactedSessionCall(String msgVpnName, String clientName, String sessionName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/transactedSessions/{sessionName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -6035,7 +6023,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6052,32 +6040,32 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientTransactedSessionValidateBeforeCall(String msgVpnName, String clientName, String sessionName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientTransactedSession(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientTransactedSession(Async)");
         }
-        
         // verify the required parameter 'sessionName' is set
         if (sessionName == null) {
             throw new ApiException("Missing the required parameter 'sessionName' when calling getMsgVpnClientTransactedSession(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientTransactedSessionCall(msgVpnName, clientName, sessionName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6163,7 +6151,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientTransactedSessionsCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients/{clientName}/transactedSessions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -6191,7 +6179,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6208,27 +6196,28 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientTransactedSessionsValidateBeforeCall(String msgVpnName, String clientName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClientTransactedSessions(Async)");
         }
-        
         // verify the required parameter 'clientName' is set
         if (clientName == null) {
             throw new ApiException("Missing the required parameter 'clientName' when calling getMsgVpnClientTransactedSessions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientTransactedSessionsCall(msgVpnName, clientName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6319,7 +6308,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnClientsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/clients"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -6346,7 +6335,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6363,22 +6352,24 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnClientsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnClients(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnClientsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6464,7 +6455,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheCall(String msgVpnName, String cacheName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -6486,7 +6477,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6503,27 +6494,28 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheValidateBeforeCall(String msgVpnName, String cacheName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCache(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCache(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheCall(msgVpnName, cacheName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6604,7 +6596,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterCall(String msgVpnName, String cacheName, String clusterName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -6627,7 +6619,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6644,32 +6636,32 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheCluster(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheCluster(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheCluster(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterCall(msgVpnName, cacheName, clusterName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6754,7 +6746,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceCall(String msgVpnName, String cacheName, String clusterName, String instanceName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances/{instanceName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -6778,7 +6770,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6795,37 +6787,36 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstanceValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, String instanceName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterInstance(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterInstance(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterInstance(Async)");
         }
-        
         // verify the required parameter 'instanceName' is set
         if (instanceName == null) {
             throw new ApiException("Missing the required parameter 'instanceName' when calling getMsgVpnDistributedCacheClusterInstance(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterInstanceCall(msgVpnName, cacheName, clusterName, instanceName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -6915,7 +6906,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstancesCall(String msgVpnName, String cacheName, String clusterName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters/{clusterName}/instances"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -6944,7 +6935,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -6961,32 +6952,32 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClusterInstancesValidateBeforeCall(String msgVpnName, String cacheName, String clusterName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusterInstances(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusterInstances(Async)");
         }
-        
         // verify the required parameter 'clusterName' is set
         if (clusterName == null) {
             throw new ApiException("Missing the required parameter 'clusterName' when calling getMsgVpnDistributedCacheClusterInstances(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClusterInstancesCall(msgVpnName, cacheName, clusterName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7081,7 +7072,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCacheClustersCall(String msgVpnName, String cacheName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches/{cacheName}/clusters"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -7109,7 +7100,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7126,27 +7117,28 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCacheClustersValidateBeforeCall(String msgVpnName, String cacheName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCacheClusters(Async)");
         }
-        
         // verify the required parameter 'cacheName' is set
         if (cacheName == null) {
             throw new ApiException("Missing the required parameter 'cacheName' when calling getMsgVpnDistributedCacheClusters(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCacheClustersCall(msgVpnName, cacheName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7237,7 +7229,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnDistributedCachesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/distributedCaches"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -7264,7 +7256,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7281,22 +7273,24 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnDistributedCachesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnDistributedCaches(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnDistributedCachesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7383,7 +7377,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnMqttSessionCall(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/mqttSessions/{mqttSessionClientId},{mqttSessionVirtualRouter}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -7406,7 +7400,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7423,37 +7417,37 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnMqttSessionValidateBeforeCall(String msgVpnName, String mqttSessionClientId, String mqttSessionVirtualRouter, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnMqttSession(Async)");
         }
-        
         // verify the required parameter 'mqttSessionClientId' is set
         if (mqttSessionClientId == null) {
             throw new ApiException("Missing the required parameter 'mqttSessionClientId' when calling getMsgVpnMqttSession(Async)");
         }
-        
         // verify the required parameter 'mqttSessionVirtualRouter' is set
         if (mqttSessionVirtualRouter == null) {
             throw new ApiException("Missing the required parameter 'mqttSessionVirtualRouter' when calling getMsgVpnMqttSession(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnMqttSessionCall(msgVpnName, mqttSessionClientId, mqttSessionVirtualRouter, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get an MQTT Session object.
-     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -7468,7 +7462,7 @@ public class MsgVpnApi {
 
     /**
      * Get an MQTT Session object.
-     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -7484,7 +7478,7 @@ public class MsgVpnApi {
 
     /**
      * Get an MQTT Session object. (asynchronously)
-     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get an MQTT Session object.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param mqttSessionClientId The Client ID of the MQTT Session, which corresponds to the ClientId provided in the MQTT CONNECT packet. (required)
      * @param mqttSessionVirtualRouter The virtual router of the MQTT Session. (required)
@@ -7533,7 +7527,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnMqttSessionsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/mqttSessions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -7560,7 +7554,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7577,27 +7571,29 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnMqttSessionsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnMqttSessions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnMqttSessionsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of MQTT Session objects.
-     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -7613,7 +7609,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of MQTT Session objects.
-     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -7630,7 +7626,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of MQTT Session objects. (asynchronously)
-     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#39;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of MQTT Session objects.  An MQTT Session object is a virtual representation of an MQTT client connection. An MQTT session holds the state of an MQTT client (that is, it is used to contain a client&#x27;s QoS 0 and QoS 1 subscription sets and any undelivered QoS 1 messages).   Attribute|Identifying|Deprecated :---|:---:|:---: mqttSessionClientId|x| mqttSessionVirtualRouter|x| msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -7678,7 +7674,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueCall(String msgVpnName, String queueName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -7700,7 +7696,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7717,27 +7713,28 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueValidateBeforeCall(String msgVpnName, String queueName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueue(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueue(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueCall(msgVpnName, queueName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7818,7 +7815,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueMsgCall(String msgVpnName, String queueName, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/msgs/{msgId}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -7841,7 +7838,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -7858,32 +7855,32 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueMsgValidateBeforeCall(String msgVpnName, String queueName, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueueMsg(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueueMsg(Async)");
         }
-        
         // verify the required parameter 'msgId' is set
         if (msgId == null) {
             throw new ApiException("Missing the required parameter 'msgId' when calling getMsgVpnQueueMsg(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueMsgCall(msgVpnName, queueName, msgId, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -7969,7 +7966,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueueMsgsCall(String msgVpnName, String queueName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues/{queueName}/msgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -7997,7 +7994,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8014,27 +8011,28 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueueMsgsValidateBeforeCall(String msgVpnName, String queueName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueueMsgs(Async)");
         }
-        
         // verify the required parameter 'queueName' is set
         if (queueName == null) {
             throw new ApiException("Missing the required parameter 'queueName' when calling getMsgVpnQueueMsgs(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueueMsgsCall(msgVpnName, queueName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -8125,7 +8123,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnQueuesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/queues"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -8152,7 +8150,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8169,22 +8167,24 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnQueuesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnQueues(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnQueuesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -8270,7 +8270,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnReplayLogCall(String msgVpnName, String replayLogName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/replayLogs/{replayLogName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -8292,7 +8292,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8309,32 +8309,33 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnReplayLogValidateBeforeCall(String msgVpnName, String replayLogName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnReplayLog(Async)");
         }
-        
         // verify the required parameter 'replayLogName' is set
         if (replayLogName == null) {
             throw new ApiException("Missing the required parameter 'replayLogName' when calling getMsgVpnReplayLog(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnReplayLogCall(msgVpnName, replayLogName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a Replay Log object.
-     * Get a Replay Log object.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Replay Log object.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param replayLogName The name of the Replay Log. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -8348,7 +8349,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Replay Log object.
-     * Get a Replay Log object.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Replay Log object.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param replayLogName The name of the Replay Log. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -8363,7 +8364,7 @@ public class MsgVpnApi {
 
     /**
      * Get a Replay Log object. (asynchronously)
-     * Get a Replay Log object.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a Replay Log object.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param replayLogName The name of the Replay Log. (required)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
@@ -8411,7 +8412,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnReplayLogsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/replayLogs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -8438,7 +8439,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8455,27 +8456,29 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnReplayLogsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnReplayLogs(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnReplayLogsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of Replay Log objects.
-     * Get a list of Replay Log objects.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Replay Log objects.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -8491,7 +8494,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Replay Log objects.
-     * Get a list of Replay Log objects.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Replay Log objects.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -8508,7 +8511,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Replay Log objects. (asynchronously)
-     * Get a list of Replay Log objects.  When the Message Replay feature is enabled enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Replay Log objects.  When the Message Replay feature is enabled, message brokers store persistent messages in a Replay Log. These messages are kept until the log is full, after which the oldest messages are removed to free up space for new messages.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x| replayLogName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param msgVpnName The name of the Message VPN. (required)
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
@@ -8556,7 +8559,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointCall(String msgVpnName, String restDeliveryPointName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints/{restDeliveryPointName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -8578,7 +8581,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8595,27 +8598,28 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointValidateBeforeCall(String msgVpnName, String restDeliveryPointName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPoint(Async)");
         }
-        
         // verify the required parameter 'restDeliveryPointName' is set
         if (restDeliveryPointName == null) {
             throw new ApiException("Missing the required parameter 'restDeliveryPointName' when calling getMsgVpnRestDeliveryPoint(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointCall(msgVpnName, restDeliveryPointName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -8696,7 +8700,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumerCall(String msgVpnName, String restDeliveryPointName, String restConsumerName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints/{restDeliveryPointName}/restConsumers/{restConsumerName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -8719,7 +8723,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8736,32 +8740,32 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumerValidateBeforeCall(String msgVpnName, String restDeliveryPointName, String restConsumerName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPointRestConsumer(Async)");
         }
-        
         // verify the required parameter 'restDeliveryPointName' is set
         if (restDeliveryPointName == null) {
             throw new ApiException("Missing the required parameter 'restDeliveryPointName' when calling getMsgVpnRestDeliveryPointRestConsumer(Async)");
         }
-        
         // verify the required parameter 'restConsumerName' is set
         if (restConsumerName == null) {
             throw new ApiException("Missing the required parameter 'restConsumerName' when calling getMsgVpnRestDeliveryPointRestConsumer(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointRestConsumerCall(msgVpnName, restDeliveryPointName, restConsumerName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -8847,7 +8851,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumersCall(String msgVpnName, String restDeliveryPointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints/{restDeliveryPointName}/restConsumers"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -8875,7 +8879,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -8892,27 +8896,28 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointRestConsumersValidateBeforeCall(String msgVpnName, String restDeliveryPointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPointRestConsumers(Async)");
         }
-        
         // verify the required parameter 'restDeliveryPointName' is set
         if (restDeliveryPointName == null) {
             throw new ApiException("Missing the required parameter 'restDeliveryPointName' when calling getMsgVpnRestDeliveryPointRestConsumers(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointRestConsumersCall(msgVpnName, restDeliveryPointName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9003,7 +9008,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnRestDeliveryPointsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/restDeliveryPoints"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -9030,7 +9035,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9047,22 +9052,24 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnRestDeliveryPointsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnRestDeliveryPoints(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnRestDeliveryPointsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9148,7 +9155,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointCall(String msgVpnName, String topicEndpointName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -9170,7 +9177,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9187,27 +9194,28 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointValidateBeforeCall(String msgVpnName, String topicEndpointName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpoint(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling getMsgVpnTopicEndpoint(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointCall(msgVpnName, topicEndpointName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9288,7 +9296,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointMsgCall(String msgVpnName, String topicEndpointName, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/msgs/{msgId}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -9311,7 +9319,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9328,32 +9336,32 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointMsgValidateBeforeCall(String msgVpnName, String topicEndpointName, String msgId, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpointMsg(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling getMsgVpnTopicEndpointMsg(Async)");
         }
-        
         // verify the required parameter 'msgId' is set
         if (msgId == null) {
             throw new ApiException("Missing the required parameter 'msgId' when calling getMsgVpnTopicEndpointMsg(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointMsgCall(msgVpnName, topicEndpointName, msgId, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9439,7 +9447,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointMsgsCall(String msgVpnName, String topicEndpointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints/{topicEndpointName}/msgs"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -9467,7 +9475,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9484,27 +9492,28 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointMsgsValidateBeforeCall(String msgVpnName, String topicEndpointName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpointMsgs(Async)");
         }
-        
         // verify the required parameter 'topicEndpointName' is set
         if (topicEndpointName == null) {
             throw new ApiException("Missing the required parameter 'topicEndpointName' when calling getMsgVpnTopicEndpointMsgs(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointMsgsCall(msgVpnName, topicEndpointName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9595,7 +9604,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTopicEndpointsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/topicEndpoints"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -9622,7 +9631,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9639,22 +9648,24 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTopicEndpointsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTopicEndpoints(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTopicEndpointsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9740,7 +9751,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTransactionCall(String msgVpnName, String xid, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/transactions/{xid}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -9762,7 +9773,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9779,27 +9790,28 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTransactionValidateBeforeCall(String msgVpnName, String xid, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTransaction(Async)");
         }
-        
         // verify the required parameter 'xid' is set
         if (xid == null) {
             throw new ApiException("Missing the required parameter 'xid' when calling getMsgVpnTransaction(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTransactionCall(msgVpnName, xid, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -9881,7 +9893,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnTransactionsCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/transactions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -9908,7 +9920,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -9925,22 +9937,24 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnTransactionsValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnTransactions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnTransactionsCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -10027,7 +10041,7 @@ public class MsgVpnApi {
      */
     public com.squareup.okhttp.Call getMsgVpnsCall(Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns";
 
@@ -10053,7 +10067,7 @@ public class MsgVpnApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -10070,22 +10084,25 @@ public class MsgVpnApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnsValidateBeforeCall(Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         
-
         com.squareup.okhttp.Call call = getMsgVpnsCall(count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of Message VPN objects.
-     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
      * @param where Include in the response only objects where certain conditions are true. See the the documentation for the &#x60;where&#x60; parameter. (optional)
@@ -10100,7 +10117,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Message VPN objects.
-     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
      * @param where Include in the response only objects where certain conditions are true. See the the documentation for the &#x60;where&#x60; parameter. (optional)
@@ -10116,7 +10133,7 @@ public class MsgVpnApi {
 
     /**
      * Get a list of Message VPN objects. (asynchronously)
-     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#39;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
+     * Get a list of Message VPN objects.  Message VPNs (Virtual Private Networks) allow for the segregation of topic space and clients. They also group clients connecting to a network of message brokers, such that messages published within a particular group are only visible to that group&#x27;s clients.   Attribute|Identifying|Deprecated :---|:---:|:---: msgVpnName|x|    A SEMP client authorized with a minimum access scope/level of \&quot;vpn/read-only\&quot; is required to perform this operation.  This has been available since 2.11.
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
      * @param where Include in the response only objects where certain conditions are true. See the the documentation for the &#x60;where&#x60; parameter. (optional)
