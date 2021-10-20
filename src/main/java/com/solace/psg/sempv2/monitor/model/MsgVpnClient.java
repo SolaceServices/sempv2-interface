@@ -1,15 +1,14 @@
 /*
  * SEMP (Solace Element Management Protocol)
- * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any (non-exclusively) of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written|See note 3 Write-Only|Attribute can only be written, not read| Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version|    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object|New attribute values|Object attributes and metadata|Set to default (but see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters \"q1\" and \"q2\" ; with values \"val1\" and \"val2\" respectively /SEMP/v2/monitor/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/monitor/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/monitor/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/monitor/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/monitor/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/monitor/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/monitor/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/monitor/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/monitor/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|For PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT. If the object does not exist, it is created first.    
+ * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any combination of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written.|See note 3 Write-Only|Attribute can only be written, not read, unless the attribute is also opaque|See the documentation for the opaque property Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version| Opaque|Attribute can be set or retrieved in opaque form when the `opaquePassword` query parameter is present|See the `opaquePassword` query parameter documentation    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    In the monitoring API, any non-identifying attribute may not be returned in a GET.  ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object (see note 5)|New attribute values|Object attributes and metadata|Set to default, with certain exceptions (see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters ; \"q1\" and \"q2\" with values \"val1\" and \"val2\" respectively /SEMP/v2/monitor/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/monitor/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/monitor/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/monitor/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/monitor/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/monitor/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/monitor/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/monitor/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/monitor/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ### opaquePassword  Attributes with the opaque property are also write-only and so cannot normally be retrieved in a GET. However, when a password is provided in the `opaquePassword` query parameter, attributes with the opaque property are retrieved in a GET in opaque form, encrypted with this password. The query parameter can also be used on a POST, PATCH, or PUT to set opaque attributes using opaque attribute values retrieved in a GET, so long as:  1. the same password that was used to retrieve the opaque attribute values is provided; and  2. the broker to which the request is being sent has the same major and minor SEMP version as the broker that produced the opaque attribute values.  The password provided in the query parameter must be a minimum of 8 characters and a maximum of 128 characters.  The query parameter can only be used in the configuration API, and only over HTTPS.  ## Help  Visit [our website](https://solace.com) to learn more about Solace.  You can also download the SEMP API specifications by clicking [here](https://solace.com/downloads/).  If you need additional support, please contact us at [support@solace.com](mailto:support@solace.com).  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|On a PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT, except in the following two cases: there is a mutual requires relationship with another non-write-only attribute and both attributes are absent from the request; or the attribute is also opaque and the `opaquePassword` query parameter is provided in the request. 5|On a PUT, if the object does not exist, it is created first.  
  *
- * OpenAPI spec version: 9.4
+ * OpenAPI spec version: 2.17
  * Contact: support@solace.com
  *
  * NOTE: This class is auto generated by the swagger code generator program.
  * https://github.com/swagger-api/swagger-codegen.git
  * Do not edit the class manually.
  */
-
 
 package com.solace.psg.sempv2.monitor.model;
 
@@ -20,14 +19,13 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.io.IOException;
-
 /**
  * MsgVpnClient
  */
-@javax.annotation.Generated(value = "io.swagger.codegen.languages.JavaClientCodegen", date = "2020-03-13T23:07:13.589Z")
+
+@javax.annotation.Generated(value = "io.swagger.codegen.v3.generators.java.JavaClientCodegen", date = "2021-04-29T21:57:21.016551900+01:00[Europe/London]")
 public class MsgVpnClient {
   @SerializedName("aclProfileName")
   private String aclProfileName = null;
@@ -416,7 +414,7 @@ public class MsgVpnClient {
    * The name of the access control list (ACL) profile of the Client.
    * @return aclProfileName
   **/
-  @ApiModelProperty(value = "The name of the access control list (ACL) profile of the Client.")
+  @Schema(description = "The name of the access control list (ACL) profile of the Client.")
   public String getAclProfileName() {
     return aclProfileName;
   }
@@ -434,7 +432,7 @@ public class MsgVpnClient {
    * The name of the original MsgVpn which the client signaled in. Available since 2.14.
    * @return aliasedFromMsgVpnName
   **/
-  @ApiModelProperty(value = "The name of the original MsgVpn which the client signaled in. Available since 2.14.")
+  @Schema(description = "The name of the original MsgVpn which the client signaled in. Available since 2.14.")
   public String getAliasedFromMsgVpnName() {
     return aliasedFromMsgVpnName;
   }
@@ -452,7 +450,7 @@ public class MsgVpnClient {
    * The number of Client bind failures due to endpoint being already bound.
    * @return alreadyBoundBindFailureCount
   **/
-  @ApiModelProperty(value = "The number of Client bind failures due to endpoint being already bound.")
+  @Schema(description = "The number of Client bind failures due to endpoint being already bound.")
   public Long getAlreadyBoundBindFailureCount() {
     return alreadyBoundBindFailureCount;
   }
@@ -470,7 +468,7 @@ public class MsgVpnClient {
    * The name of the authorization group of the Client.
    * @return authorizationGroupName
   **/
-  @ApiModelProperty(value = "The name of the authorization group of the Client.")
+  @Schema(description = "The name of the authorization group of the Client.")
   public String getAuthorizationGroupName() {
     return authorizationGroupName;
   }
@@ -488,7 +486,7 @@ public class MsgVpnClient {
    * The one minute average of the message rate received from the Client, in bytes per second (B/sec).
    * @return averageRxByteRate
   **/
-  @ApiModelProperty(value = "The one minute average of the message rate received from the Client, in bytes per second (B/sec).")
+  @Schema(description = "The one minute average of the message rate received from the Client, in bytes per second (B/sec).")
   public Long getAverageRxByteRate() {
     return averageRxByteRate;
   }
@@ -506,7 +504,7 @@ public class MsgVpnClient {
    * The one minute average of the message rate received from the Client, in messages per second (msg/sec).
    * @return averageRxMsgRate
   **/
-  @ApiModelProperty(value = "The one minute average of the message rate received from the Client, in messages per second (msg/sec).")
+  @Schema(description = "The one minute average of the message rate received from the Client, in messages per second (msg/sec).")
   public Long getAverageRxMsgRate() {
     return averageRxMsgRate;
   }
@@ -524,7 +522,7 @@ public class MsgVpnClient {
    * The one minute average of the message rate transmitted to the Client, in bytes per second (B/sec).
    * @return averageTxByteRate
   **/
-  @ApiModelProperty(value = "The one minute average of the message rate transmitted to the Client, in bytes per second (B/sec).")
+  @Schema(description = "The one minute average of the message rate transmitted to the Client, in bytes per second (B/sec).")
   public Long getAverageTxByteRate() {
     return averageTxByteRate;
   }
@@ -542,7 +540,7 @@ public class MsgVpnClient {
    * The one minute average of the message rate transmitted to the Client, in messages per second (msg/sec).
    * @return averageTxMsgRate
   **/
-  @ApiModelProperty(value = "The one minute average of the message rate transmitted to the Client, in messages per second (msg/sec).")
+  @Schema(description = "The one minute average of the message rate transmitted to the Client, in messages per second (msg/sec).")
   public Long getAverageTxMsgRate() {
     return averageTxMsgRate;
   }
@@ -560,7 +558,7 @@ public class MsgVpnClient {
    * The number of Client requests to bind to an endpoint.
    * @return bindRequestCount
   **/
-  @ApiModelProperty(value = "The number of Client requests to bind to an endpoint.")
+  @Schema(description = "The number of Client requests to bind to an endpoint.")
   public Long getBindRequestCount() {
     return bindRequestCount;
   }
@@ -578,7 +576,7 @@ public class MsgVpnClient {
    * The number of successful Client requests to bind to an endpoint.
    * @return bindSuccessCount
   **/
-  @ApiModelProperty(value = "The number of successful Client requests to bind to an endpoint.")
+  @Schema(description = "The number of successful Client requests to bind to an endpoint.")
   public Long getBindSuccessCount() {
     return bindSuccessCount;
   }
@@ -596,7 +594,7 @@ public class MsgVpnClient {
    * The IP address and port of the Client.
    * @return clientAddress
   **/
-  @ApiModelProperty(value = "The IP address and port of the Client.")
+  @Schema(description = "The IP address and port of the Client.")
   public String getClientAddress() {
     return clientAddress;
   }
@@ -614,7 +612,7 @@ public class MsgVpnClient {
    * The identifier (ID) of the Client.
    * @return clientId
   **/
-  @ApiModelProperty(value = "The identifier (ID) of the Client.")
+  @Schema(description = "The identifier (ID) of the Client.")
   public Integer getClientId() {
     return clientId;
   }
@@ -632,7 +630,7 @@ public class MsgVpnClient {
    * The name of the Client.
    * @return clientName
   **/
-  @ApiModelProperty(value = "The name of the Client.")
+  @Schema(description = "The name of the Client.")
   public String getClientName() {
     return clientName;
   }
@@ -650,7 +648,7 @@ public class MsgVpnClient {
    * The name of the client profile of the Client.
    * @return clientProfileName
   **/
-  @ApiModelProperty(value = "The name of the client profile of the Client.")
+  @Schema(description = "The name of the client profile of the Client.")
   public String getClientProfileName() {
     return clientProfileName;
   }
@@ -668,7 +666,7 @@ public class MsgVpnClient {
    * The client username of the Client used for authorization.
    * @return clientUsername
   **/
-  @ApiModelProperty(value = "The client username of the Client used for authorization.")
+  @Schema(description = "The client username of the Client used for authorization.")
   public String getClientUsername() {
     return clientUsername;
   }
@@ -686,7 +684,7 @@ public class MsgVpnClient {
    * The amount of client control messages received from the Client, in bytes (B).
    * @return controlRxByteCount
   **/
-  @ApiModelProperty(value = "The amount of client control messages received from the Client, in bytes (B).")
+  @Schema(description = "The amount of client control messages received from the Client, in bytes (B).")
   public Long getControlRxByteCount() {
     return controlRxByteCount;
   }
@@ -704,7 +702,7 @@ public class MsgVpnClient {
    * The number of client control messages received from the Client.
    * @return controlRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of client control messages received from the Client.")
+  @Schema(description = "The number of client control messages received from the Client.")
   public Long getControlRxMsgCount() {
     return controlRxMsgCount;
   }
@@ -722,7 +720,7 @@ public class MsgVpnClient {
    * The amount of client control messages transmitted to the Client, in bytes (B).
    * @return controlTxByteCount
   **/
-  @ApiModelProperty(value = "The amount of client control messages transmitted to the Client, in bytes (B).")
+  @Schema(description = "The amount of client control messages transmitted to the Client, in bytes (B).")
   public Long getControlTxByteCount() {
     return controlTxByteCount;
   }
@@ -740,7 +738,7 @@ public class MsgVpnClient {
    * The number of client control messages transmitted to the Client.
    * @return controlTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of client control messages transmitted to the Client.")
+  @Schema(description = "The number of client control messages transmitted to the Client.")
   public Long getControlTxMsgCount() {
     return controlTxMsgCount;
   }
@@ -758,7 +756,7 @@ public class MsgVpnClient {
    * The number of Client bind failures due to being denied cut-through forwarding.
    * @return cutThroughDeniedBindFailureCount
   **/
-  @ApiModelProperty(value = "The number of Client bind failures due to being denied cut-through forwarding.")
+  @Schema(description = "The number of Client bind failures due to being denied cut-through forwarding.")
   public Long getCutThroughDeniedBindFailureCount() {
     return cutThroughDeniedBindFailureCount;
   }
@@ -776,7 +774,7 @@ public class MsgVpnClient {
    * The amount of client data messages received from the Client, in bytes (B).
    * @return dataRxByteCount
   **/
-  @ApiModelProperty(value = "The amount of client data messages received from the Client, in bytes (B).")
+  @Schema(description = "The amount of client data messages received from the Client, in bytes (B).")
   public Long getDataRxByteCount() {
     return dataRxByteCount;
   }
@@ -794,7 +792,7 @@ public class MsgVpnClient {
    * The number of client data messages received from the Client.
    * @return dataRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of client data messages received from the Client.")
+  @Schema(description = "The number of client data messages received from the Client.")
   public Long getDataRxMsgCount() {
     return dataRxMsgCount;
   }
@@ -812,7 +810,7 @@ public class MsgVpnClient {
    * The amount of client data messages transmitted to the Client, in bytes (B).
    * @return dataTxByteCount
   **/
-  @ApiModelProperty(value = "The amount of client data messages transmitted to the Client, in bytes (B).")
+  @Schema(description = "The amount of client data messages transmitted to the Client, in bytes (B).")
   public Long getDataTxByteCount() {
     return dataTxByteCount;
   }
@@ -830,7 +828,7 @@ public class MsgVpnClient {
    * The number of client data messages transmitted to the Client.
    * @return dataTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of client data messages transmitted to the Client.")
+  @Schema(description = "The number of client data messages transmitted to the Client.")
   public Long getDataTxMsgCount() {
     return dataTxMsgCount;
   }
@@ -848,7 +846,7 @@ public class MsgVpnClient {
    * The description text of the Client.
    * @return description
   **/
-  @ApiModelProperty(value = "The description text of the Client.")
+  @Schema(description = "The description text of the Client.")
   public String getDescription() {
     return description;
   }
@@ -866,7 +864,7 @@ public class MsgVpnClient {
    * The number of Client bind failures due to endpoint being disabled.
    * @return disabledBindFailureCount
   **/
-  @ApiModelProperty(value = "The number of Client bind failures due to endpoint being disabled.")
+  @Schema(description = "The number of Client bind failures due to endpoint being disabled.")
   public Long getDisabledBindFailureCount() {
     return disabledBindFailureCount;
   }
@@ -881,10 +879,10 @@ public class MsgVpnClient {
   }
 
    /**
-   * The priority of the Client&#39;s subscriptions for receiving deliver-to-one (DTO) messages published on the local broker.
+   * The priority of the Client&#x27;s subscriptions for receiving deliver-to-one (DTO) messages published on the local broker.
    * @return dtoLocalPriority
   **/
-  @ApiModelProperty(value = "The priority of the Client's subscriptions for receiving deliver-to-one (DTO) messages published on the local broker.")
+  @Schema(description = "The priority of the Client's subscriptions for receiving deliver-to-one (DTO) messages published on the local broker.")
   public Integer getDtoLocalPriority() {
     return dtoLocalPriority;
   }
@@ -899,10 +897,10 @@ public class MsgVpnClient {
   }
 
    /**
-   * The priority of the Client&#39;s subscriptions for receiving deliver-to-one (DTO) messages published on a remote broker.
+   * The priority of the Client&#x27;s subscriptions for receiving deliver-to-one (DTO) messages published on a remote broker.
    * @return dtoNetworkPriority
   **/
-  @ApiModelProperty(value = "The priority of the Client's subscriptions for receiving deliver-to-one (DTO) messages published on a remote broker.")
+  @Schema(description = "The priority of the Client's subscriptions for receiving deliver-to-one (DTO) messages published on a remote broker.")
   public Integer getDtoNetworkPriority() {
     return dtoNetworkPriority;
   }
@@ -920,7 +918,7 @@ public class MsgVpnClient {
    * Indicates whether message eliding is enabled for the Client.
    * @return eliding
   **/
-  @ApiModelProperty(value = "Indicates whether message eliding is enabled for the Client.")
+  @Schema(description = "Indicates whether message eliding is enabled for the Client.")
   public Boolean isEliding() {
     return eliding;
   }
@@ -938,7 +936,7 @@ public class MsgVpnClient {
    * The number of topics requiring message eliding for the Client.
    * @return elidingTopicCount
   **/
-  @ApiModelProperty(value = "The number of topics requiring message eliding for the Client.")
+  @Schema(description = "The number of topics requiring message eliding for the Client.")
   public Integer getElidingTopicCount() {
     return elidingTopicCount;
   }
@@ -956,7 +954,7 @@ public class MsgVpnClient {
    * The peak number of topics requiring message eliding for the Client.
    * @return elidingTopicPeakCount
   **/
-  @ApiModelProperty(value = "The peak number of topics requiring message eliding for the Client.")
+  @Schema(description = "The peak number of topics requiring message eliding for the Client.")
   public Integer getElidingTopicPeakCount() {
     return elidingTopicPeakCount;
   }
@@ -974,7 +972,7 @@ public class MsgVpnClient {
    * The number of Client bind failures due to being denied guaranteed messaging.
    * @return guaranteedDeniedBindFailureCount
   **/
-  @ApiModelProperty(value = "The number of Client bind failures due to being denied guaranteed messaging.")
+  @Schema(description = "The number of Client bind failures due to being denied guaranteed messaging.")
   public Long getGuaranteedDeniedBindFailureCount() {
     return guaranteedDeniedBindFailureCount;
   }
@@ -992,7 +990,7 @@ public class MsgVpnClient {
    * The number of Client bind failures due to an invalid selector.
    * @return invalidSelectorBindFailureCount
   **/
-  @ApiModelProperty(value = "The number of Client bind failures due to an invalid selector.")
+  @Schema(description = "The number of Client bind failures due to an invalid selector.")
   public Long getInvalidSelectorBindFailureCount() {
     return invalidSelectorBindFailureCount;
   }
@@ -1010,7 +1008,7 @@ public class MsgVpnClient {
    * Indicates whether the large-message event has been raised for the Client.
    * @return largeMsgEventRaised
   **/
-  @ApiModelProperty(value = "Indicates whether the large-message event has been raised for the Client.")
+  @Schema(description = "Indicates whether the large-message event has been raised for the Client.")
   public Boolean isLargeMsgEventRaised() {
     return largeMsgEventRaised;
   }
@@ -1028,7 +1026,7 @@ public class MsgVpnClient {
    * The number of login request messages received from the Client.
    * @return loginRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of login request messages received from the Client.")
+  @Schema(description = "The number of login request messages received from the Client.")
   public Long getLoginRxMsgCount() {
     return loginRxMsgCount;
   }
@@ -1046,7 +1044,7 @@ public class MsgVpnClient {
    * The number of login response messages transmitted to the Client.
    * @return loginTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of login response messages transmitted to the Client.")
+  @Schema(description = "The number of login response messages transmitted to the Client.")
   public Long getLoginTxMsgCount() {
     return loginTxMsgCount;
   }
@@ -1064,7 +1062,7 @@ public class MsgVpnClient {
    * The number of Client bind failures due to the endpoint maximum bind count being exceeded.
    * @return maxBindCountExceededBindFailureCount
   **/
-  @ApiModelProperty(value = "The number of Client bind failures due to the endpoint maximum bind count being exceeded.")
+  @Schema(description = "The number of Client bind failures due to the endpoint maximum bind count being exceeded.")
   public Long getMaxBindCountExceededBindFailureCount() {
     return maxBindCountExceededBindFailureCount;
   }
@@ -1082,7 +1080,7 @@ public class MsgVpnClient {
    * Indicates whether the max-eliding-topic-count event has been raised for the Client.
    * @return maxElidingTopicCountEventRaised
   **/
-  @ApiModelProperty(value = "Indicates whether the max-eliding-topic-count event has been raised for the Client.")
+  @Schema(description = "Indicates whether the max-eliding-topic-count event has been raised for the Client.")
   public Boolean isMaxElidingTopicCountEventRaised() {
     return maxElidingTopicCountEventRaised;
   }
@@ -1100,7 +1098,7 @@ public class MsgVpnClient {
    * The number of MQTT connect acknowledgment (CONNACK) refused response packets transmitted to the Client.
    * @return mqttConnackErrorTxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT connect acknowledgment (CONNACK) refused response packets transmitted to the Client.")
+  @Schema(description = "The number of MQTT connect acknowledgment (CONNACK) refused response packets transmitted to the Client.")
   public Long getMqttConnackErrorTxCount() {
     return mqttConnackErrorTxCount;
   }
@@ -1118,7 +1116,7 @@ public class MsgVpnClient {
    * The number of MQTT connect acknowledgment (CONNACK) accepted response packets transmitted to the Client.
    * @return mqttConnackTxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT connect acknowledgment (CONNACK) accepted response packets transmitted to the Client.")
+  @Schema(description = "The number of MQTT connect acknowledgment (CONNACK) accepted response packets transmitted to the Client.")
   public Long getMqttConnackTxCount() {
     return mqttConnackTxCount;
   }
@@ -1136,7 +1134,7 @@ public class MsgVpnClient {
    * The number of MQTT connect (CONNECT) request packets received from the Client.
    * @return mqttConnectRxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT connect (CONNECT) request packets received from the Client.")
+  @Schema(description = "The number of MQTT connect (CONNECT) request packets received from the Client.")
   public Long getMqttConnectRxCount() {
     return mqttConnectRxCount;
   }
@@ -1154,7 +1152,7 @@ public class MsgVpnClient {
    * The number of MQTT disconnect (DISCONNECT) request packets received from the Client.
    * @return mqttDisconnectRxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT disconnect (DISCONNECT) request packets received from the Client.")
+  @Schema(description = "The number of MQTT disconnect (DISCONNECT) request packets received from the Client.")
   public Long getMqttDisconnectRxCount() {
     return mqttDisconnectRxCount;
   }
@@ -1172,7 +1170,7 @@ public class MsgVpnClient {
    * The number of MQTT ping request (PINGREQ) packets received from the Client.
    * @return mqttPingreqRxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT ping request (PINGREQ) packets received from the Client.")
+  @Schema(description = "The number of MQTT ping request (PINGREQ) packets received from the Client.")
   public Long getMqttPingreqRxCount() {
     return mqttPingreqRxCount;
   }
@@ -1190,7 +1188,7 @@ public class MsgVpnClient {
    * The number of MQTT ping response (PINGRESP) packets transmitted to the Client.
    * @return mqttPingrespTxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT ping response (PINGRESP) packets transmitted to the Client.")
+  @Schema(description = "The number of MQTT ping response (PINGRESP) packets transmitted to the Client.")
   public Long getMqttPingrespTxCount() {
     return mqttPingrespTxCount;
   }
@@ -1208,7 +1206,7 @@ public class MsgVpnClient {
    * The number of MQTT publish acknowledgement (PUBACK) response packets received from the Client.
    * @return mqttPubackRxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT publish acknowledgement (PUBACK) response packets received from the Client.")
+  @Schema(description = "The number of MQTT publish acknowledgement (PUBACK) response packets received from the Client.")
   public Long getMqttPubackRxCount() {
     return mqttPubackRxCount;
   }
@@ -1226,7 +1224,7 @@ public class MsgVpnClient {
    * The number of MQTT publish acknowledgement (PUBACK) response packets transmitted to the Client.
    * @return mqttPubackTxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT publish acknowledgement (PUBACK) response packets transmitted to the Client.")
+  @Schema(description = "The number of MQTT publish acknowledgement (PUBACK) response packets transmitted to the Client.")
   public Long getMqttPubackTxCount() {
     return mqttPubackTxCount;
   }
@@ -1244,7 +1242,7 @@ public class MsgVpnClient {
    * The number of MQTT publish complete (PUBCOMP) packets transmitted to the Client in response to a PUBREL packet. These packets are the fourth and final packet of a QoS 2 protocol exchange.
    * @return mqttPubcompTxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT publish complete (PUBCOMP) packets transmitted to the Client in response to a PUBREL packet. These packets are the fourth and final packet of a QoS 2 protocol exchange.")
+  @Schema(description = "The number of MQTT publish complete (PUBCOMP) packets transmitted to the Client in response to a PUBREL packet. These packets are the fourth and final packet of a QoS 2 protocol exchange.")
   public Long getMqttPubcompTxCount() {
     return mqttPubcompTxCount;
   }
@@ -1262,7 +1260,7 @@ public class MsgVpnClient {
    * The number of MQTT publish message (PUBLISH) request packets received from the Client for QoS 0 message delivery.
    * @return mqttPublishQos0RxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT publish message (PUBLISH) request packets received from the Client for QoS 0 message delivery.")
+  @Schema(description = "The number of MQTT publish message (PUBLISH) request packets received from the Client for QoS 0 message delivery.")
   public Long getMqttPublishQos0RxCount() {
     return mqttPublishQos0RxCount;
   }
@@ -1280,7 +1278,7 @@ public class MsgVpnClient {
    * The number of MQTT publish message (PUBLISH) request packets transmitted to the Client for QoS 0 message delivery.
    * @return mqttPublishQos0TxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT publish message (PUBLISH) request packets transmitted to the Client for QoS 0 message delivery.")
+  @Schema(description = "The number of MQTT publish message (PUBLISH) request packets transmitted to the Client for QoS 0 message delivery.")
   public Long getMqttPublishQos0TxCount() {
     return mqttPublishQos0TxCount;
   }
@@ -1298,7 +1296,7 @@ public class MsgVpnClient {
    * The number of MQTT publish message (PUBLISH) request packets received from the Client for QoS 1 message delivery.
    * @return mqttPublishQos1RxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT publish message (PUBLISH) request packets received from the Client for QoS 1 message delivery.")
+  @Schema(description = "The number of MQTT publish message (PUBLISH) request packets received from the Client for QoS 1 message delivery.")
   public Long getMqttPublishQos1RxCount() {
     return mqttPublishQos1RxCount;
   }
@@ -1316,7 +1314,7 @@ public class MsgVpnClient {
    * The number of MQTT publish message (PUBLISH) request packets transmitted to the Client for QoS 1 message delivery.
    * @return mqttPublishQos1TxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT publish message (PUBLISH) request packets transmitted to the Client for QoS 1 message delivery.")
+  @Schema(description = "The number of MQTT publish message (PUBLISH) request packets transmitted to the Client for QoS 1 message delivery.")
   public Long getMqttPublishQos1TxCount() {
     return mqttPublishQos1TxCount;
   }
@@ -1334,7 +1332,7 @@ public class MsgVpnClient {
    * The number of MQTT publish message (PUBLISH) request packets received from the Client for QoS 2 message delivery.
    * @return mqttPublishQos2RxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT publish message (PUBLISH) request packets received from the Client for QoS 2 message delivery.")
+  @Schema(description = "The number of MQTT publish message (PUBLISH) request packets received from the Client for QoS 2 message delivery.")
   public Long getMqttPublishQos2RxCount() {
     return mqttPublishQos2RxCount;
   }
@@ -1352,7 +1350,7 @@ public class MsgVpnClient {
    * The number of MQTT publish received (PUBREC) packets transmitted to the Client in response to a PUBLISH packet with QoS 2. These packets are the second packet of a QoS 2 protocol exchange.
    * @return mqttPubrecTxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT publish received (PUBREC) packets transmitted to the Client in response to a PUBLISH packet with QoS 2. These packets are the second packet of a QoS 2 protocol exchange.")
+  @Schema(description = "The number of MQTT publish received (PUBREC) packets transmitted to the Client in response to a PUBLISH packet with QoS 2. These packets are the second packet of a QoS 2 protocol exchange.")
   public Long getMqttPubrecTxCount() {
     return mqttPubrecTxCount;
   }
@@ -1370,7 +1368,7 @@ public class MsgVpnClient {
    * The number of MQTT publish release (PUBREL) packets received from the Client in response to a PUBREC packet. These packets are the third packet of a QoS 2 protocol exchange.
    * @return mqttPubrelRxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT publish release (PUBREL) packets received from the Client in response to a PUBREC packet. These packets are the third packet of a QoS 2 protocol exchange.")
+  @Schema(description = "The number of MQTT publish release (PUBREL) packets received from the Client in response to a PUBREC packet. These packets are the third packet of a QoS 2 protocol exchange.")
   public Long getMqttPubrelRxCount() {
     return mqttPubrelRxCount;
   }
@@ -1388,7 +1386,7 @@ public class MsgVpnClient {
    * The number of MQTT subscribe acknowledgement (SUBACK) failure response packets transmitted to the Client.
    * @return mqttSubackErrorTxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT subscribe acknowledgement (SUBACK) failure response packets transmitted to the Client.")
+  @Schema(description = "The number of MQTT subscribe acknowledgement (SUBACK) failure response packets transmitted to the Client.")
   public Long getMqttSubackErrorTxCount() {
     return mqttSubackErrorTxCount;
   }
@@ -1406,7 +1404,7 @@ public class MsgVpnClient {
    * The number of MQTT subscribe acknowledgement (SUBACK) response packets transmitted to the Client.
    * @return mqttSubackTxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT subscribe acknowledgement (SUBACK) response packets transmitted to the Client.")
+  @Schema(description = "The number of MQTT subscribe acknowledgement (SUBACK) response packets transmitted to the Client.")
   public Long getMqttSubackTxCount() {
     return mqttSubackTxCount;
   }
@@ -1424,7 +1422,7 @@ public class MsgVpnClient {
    * The number of MQTT subscribe (SUBSCRIBE) request packets received from the Client to create one or more topic subscriptions.
    * @return mqttSubscribeRxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT subscribe (SUBSCRIBE) request packets received from the Client to create one or more topic subscriptions.")
+  @Schema(description = "The number of MQTT subscribe (SUBSCRIBE) request packets received from the Client to create one or more topic subscriptions.")
   public Long getMqttSubscribeRxCount() {
     return mqttSubscribeRxCount;
   }
@@ -1442,7 +1440,7 @@ public class MsgVpnClient {
    * The number of MQTT unsubscribe acknowledgement (UNSUBACK) response packets transmitted to the Client.
    * @return mqttUnsubackTxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT unsubscribe acknowledgement (UNSUBACK) response packets transmitted to the Client.")
+  @Schema(description = "The number of MQTT unsubscribe acknowledgement (UNSUBACK) response packets transmitted to the Client.")
   public Long getMqttUnsubackTxCount() {
     return mqttUnsubackTxCount;
   }
@@ -1460,7 +1458,7 @@ public class MsgVpnClient {
    * The number of MQTT unsubscribe (UNSUBSCRIBE) request packets received from the Client to remove one or more topic subscriptions.
    * @return mqttUnsubscribeRxCount
   **/
-  @ApiModelProperty(value = "The number of MQTT unsubscribe (UNSUBSCRIBE) request packets received from the Client to remove one or more topic subscriptions.")
+  @Schema(description = "The number of MQTT unsubscribe (UNSUBSCRIBE) request packets received from the Client to remove one or more topic subscriptions.")
   public Long getMqttUnsubscribeRxCount() {
     return mqttUnsubscribeRxCount;
   }
@@ -1478,7 +1476,7 @@ public class MsgVpnClient {
    * The number of messages from the Client discarded due to message spool congestion primarily caused by message promotion.
    * @return msgSpoolCongestionRxDiscardedMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages from the Client discarded due to message spool congestion primarily caused by message promotion.")
+  @Schema(description = "The number of messages from the Client discarded due to message spool congestion primarily caused by message promotion.")
   public Long getMsgSpoolCongestionRxDiscardedMsgCount() {
     return msgSpoolCongestionRxDiscardedMsgCount;
   }
@@ -1496,7 +1494,7 @@ public class MsgVpnClient {
    * The number of messages from the Client discarded by the message spool.
    * @return msgSpoolRxDiscardedMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages from the Client discarded by the message spool.")
+  @Schema(description = "The number of messages from the Client discarded by the message spool.")
   public Long getMsgSpoolRxDiscardedMsgCount() {
     return msgSpoolRxDiscardedMsgCount;
   }
@@ -1514,7 +1512,7 @@ public class MsgVpnClient {
    * The name of the Message VPN.
    * @return msgVpnName
   **/
-  @ApiModelProperty(value = "The name of the Message VPN.")
+  @Schema(description = "The name of the Message VPN.")
   public String getMsgVpnName() {
     return msgVpnName;
   }
@@ -1532,7 +1530,7 @@ public class MsgVpnClient {
    * Indicates whether not to deliver messages to the Client if it published them.
    * @return noLocalDelivery
   **/
-  @ApiModelProperty(value = "Indicates whether not to deliver messages to the Client if it published them.")
+  @Schema(description = "Indicates whether not to deliver messages to the Client if it published them.")
   public Boolean isNoLocalDelivery() {
     return noLocalDelivery;
   }
@@ -1550,7 +1548,7 @@ public class MsgVpnClient {
    * The number of messages from the Client discarded due to no matching subscription found.
    * @return noSubscriptionMatchRxDiscardedMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages from the Client discarded due to no matching subscription found.")
+  @Schema(description = "The number of messages from the Client discarded due to no matching subscription found.")
   public Long getNoSubscriptionMatchRxDiscardedMsgCount() {
     return noSubscriptionMatchRxDiscardedMsgCount;
   }
@@ -1568,7 +1566,7 @@ public class MsgVpnClient {
    * The original value of the client username used for Client authentication.
    * @return originalClientUsername
   **/
-  @ApiModelProperty(value = "The original value of the client username used for Client authentication.")
+  @Schema(description = "The original value of the client username used for Client authentication.")
   public String getOriginalClientUsername() {
     return originalClientUsername;
   }
@@ -1586,7 +1584,7 @@ public class MsgVpnClient {
    * The number of Client bind failures due to other reasons.
    * @return otherBindFailureCount
   **/
-  @ApiModelProperty(value = "The number of Client bind failures due to other reasons.")
+  @Schema(description = "The number of Client bind failures due to other reasons.")
   public Long getOtherBindFailureCount() {
     return otherBindFailureCount;
   }
@@ -1604,7 +1602,7 @@ public class MsgVpnClient {
    * The platform the Client application software was built for, which may include the OS and API type.
    * @return platform
   **/
-  @ApiModelProperty(value = "The platform the Client application software was built for, which may include the OS and API type.")
+  @Schema(description = "The platform the Client application software was built for, which may include the OS and API type.")
   public String getPlatform() {
     return platform;
   }
@@ -1622,7 +1620,7 @@ public class MsgVpnClient {
    * The number of messages from the Client discarded due to the publish topic being denied by the Access Control List (ACL) profile.
    * @return publishTopicAclRxDiscardedMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages from the Client discarded due to the publish topic being denied by the Access Control List (ACL) profile.")
+  @Schema(description = "The number of messages from the Client discarded due to the publish topic being denied by the Access Control List (ACL) profile.")
   public Long getPublishTopicAclRxDiscardedMsgCount() {
     return publishTopicAclRxDiscardedMsgCount;
   }
@@ -1640,7 +1638,7 @@ public class MsgVpnClient {
    * The amount of HTTP request messages received from the Client, in bytes (B).
    * @return restHttpRequestRxByteCount
   **/
-  @ApiModelProperty(value = "The amount of HTTP request messages received from the Client, in bytes (B).")
+  @Schema(description = "The amount of HTTP request messages received from the Client, in bytes (B).")
   public Long getRestHttpRequestRxByteCount() {
     return restHttpRequestRxByteCount;
   }
@@ -1658,7 +1656,7 @@ public class MsgVpnClient {
    * The number of HTTP request messages received from the Client.
    * @return restHttpRequestRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of HTTP request messages received from the Client.")
+  @Schema(description = "The number of HTTP request messages received from the Client.")
   public Long getRestHttpRequestRxMsgCount() {
     return restHttpRequestRxMsgCount;
   }
@@ -1676,7 +1674,7 @@ public class MsgVpnClient {
    * The amount of HTTP request messages transmitted to the Client, in bytes (B).
    * @return restHttpRequestTxByteCount
   **/
-  @ApiModelProperty(value = "The amount of HTTP request messages transmitted to the Client, in bytes (B).")
+  @Schema(description = "The amount of HTTP request messages transmitted to the Client, in bytes (B).")
   public Long getRestHttpRequestTxByteCount() {
     return restHttpRequestTxByteCount;
   }
@@ -1694,7 +1692,7 @@ public class MsgVpnClient {
    * The number of HTTP request messages transmitted to the Client.
    * @return restHttpRequestTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of HTTP request messages transmitted to the Client.")
+  @Schema(description = "The number of HTTP request messages transmitted to the Client.")
   public Long getRestHttpRequestTxMsgCount() {
     return restHttpRequestTxMsgCount;
   }
@@ -1712,7 +1710,7 @@ public class MsgVpnClient {
    * The number of HTTP client/server error response messages received from the Client.
    * @return restHttpResponseErrorRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of HTTP client/server error response messages received from the Client.")
+  @Schema(description = "The number of HTTP client/server error response messages received from the Client.")
   public Long getRestHttpResponseErrorRxMsgCount() {
     return restHttpResponseErrorRxMsgCount;
   }
@@ -1730,7 +1728,7 @@ public class MsgVpnClient {
    * The number of HTTP client/server error response messages transmitted to the Client.
    * @return restHttpResponseErrorTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of HTTP client/server error response messages transmitted to the Client.")
+  @Schema(description = "The number of HTTP client/server error response messages transmitted to the Client.")
   public Long getRestHttpResponseErrorTxMsgCount() {
     return restHttpResponseErrorTxMsgCount;
   }
@@ -1748,7 +1746,7 @@ public class MsgVpnClient {
    * The amount of HTTP response messages received from the Client, in bytes (B).
    * @return restHttpResponseRxByteCount
   **/
-  @ApiModelProperty(value = "The amount of HTTP response messages received from the Client, in bytes (B).")
+  @Schema(description = "The amount of HTTP response messages received from the Client, in bytes (B).")
   public Long getRestHttpResponseRxByteCount() {
     return restHttpResponseRxByteCount;
   }
@@ -1766,7 +1764,7 @@ public class MsgVpnClient {
    * The number of HTTP response messages received from the Client.
    * @return restHttpResponseRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of HTTP response messages received from the Client.")
+  @Schema(description = "The number of HTTP response messages received from the Client.")
   public Long getRestHttpResponseRxMsgCount() {
     return restHttpResponseRxMsgCount;
   }
@@ -1784,7 +1782,7 @@ public class MsgVpnClient {
    * The number of HTTP successful response messages received from the Client.
    * @return restHttpResponseSuccessRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of HTTP successful response messages received from the Client.")
+  @Schema(description = "The number of HTTP successful response messages received from the Client.")
   public Long getRestHttpResponseSuccessRxMsgCount() {
     return restHttpResponseSuccessRxMsgCount;
   }
@@ -1802,7 +1800,7 @@ public class MsgVpnClient {
    * The number of HTTP successful response messages transmitted to the Client.
    * @return restHttpResponseSuccessTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of HTTP successful response messages transmitted to the Client.")
+  @Schema(description = "The number of HTTP successful response messages transmitted to the Client.")
   public Long getRestHttpResponseSuccessTxMsgCount() {
     return restHttpResponseSuccessTxMsgCount;
   }
@@ -1820,7 +1818,7 @@ public class MsgVpnClient {
    * The number of HTTP wait for reply timeout response messages received from the Client.
    * @return restHttpResponseTimeoutRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of HTTP wait for reply timeout response messages received from the Client.")
+  @Schema(description = "The number of HTTP wait for reply timeout response messages received from the Client.")
   public Long getRestHttpResponseTimeoutRxMsgCount() {
     return restHttpResponseTimeoutRxMsgCount;
   }
@@ -1838,7 +1836,7 @@ public class MsgVpnClient {
    * The number of HTTP wait for reply timeout response messages transmitted to the Client.
    * @return restHttpResponseTimeoutTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of HTTP wait for reply timeout response messages transmitted to the Client.")
+  @Schema(description = "The number of HTTP wait for reply timeout response messages transmitted to the Client.")
   public Long getRestHttpResponseTimeoutTxMsgCount() {
     return restHttpResponseTimeoutTxMsgCount;
   }
@@ -1856,7 +1854,7 @@ public class MsgVpnClient {
    * The amount of HTTP response messages transmitted to the Client, in bytes (B).
    * @return restHttpResponseTxByteCount
   **/
-  @ApiModelProperty(value = "The amount of HTTP response messages transmitted to the Client, in bytes (B).")
+  @Schema(description = "The amount of HTTP response messages transmitted to the Client, in bytes (B).")
   public Long getRestHttpResponseTxByteCount() {
     return restHttpResponseTxByteCount;
   }
@@ -1874,7 +1872,7 @@ public class MsgVpnClient {
    * The number of HTTP response messages transmitted to the Client.
    * @return restHttpResponseTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of HTTP response messages transmitted to the Client.")
+  @Schema(description = "The number of HTTP response messages transmitted to the Client.")
   public Long getRestHttpResponseTxMsgCount() {
     return restHttpResponseTxMsgCount;
   }
@@ -1892,7 +1890,7 @@ public class MsgVpnClient {
    * The amount of messages received from the Client, in bytes (B).
    * @return rxByteCount
   **/
-  @ApiModelProperty(value = "The amount of messages received from the Client, in bytes (B).")
+  @Schema(description = "The amount of messages received from the Client, in bytes (B).")
   public Long getRxByteCount() {
     return rxByteCount;
   }
@@ -1910,7 +1908,7 @@ public class MsgVpnClient {
    * The current message rate received from the Client, in bytes per second (B/sec).
    * @return rxByteRate
   **/
-  @ApiModelProperty(value = "The current message rate received from the Client, in bytes per second (B/sec).")
+  @Schema(description = "The current message rate received from the Client, in bytes per second (B/sec).")
   public Long getRxByteRate() {
     return rxByteRate;
   }
@@ -1928,7 +1926,7 @@ public class MsgVpnClient {
    * The number of messages discarded during reception from the Client.
    * @return rxDiscardedMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages discarded during reception from the Client.")
+  @Schema(description = "The number of messages discarded during reception from the Client.")
   public Long getRxDiscardedMsgCount() {
     return rxDiscardedMsgCount;
   }
@@ -1946,7 +1944,7 @@ public class MsgVpnClient {
    * The number of messages received from the Client.
    * @return rxMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages received from the Client.")
+  @Schema(description = "The number of messages received from the Client.")
   public Long getRxMsgCount() {
     return rxMsgCount;
   }
@@ -1964,7 +1962,7 @@ public class MsgVpnClient {
    * The current message rate received from the Client, in messages per second (msg/sec).
    * @return rxMsgRate
   **/
-  @ApiModelProperty(value = "The current message rate received from the Client, in messages per second (msg/sec).")
+  @Schema(description = "The current message rate received from the Client, in messages per second (msg/sec).")
   public Long getRxMsgRate() {
     return rxMsgRate;
   }
@@ -1982,7 +1980,7 @@ public class MsgVpnClient {
    * The timestamp of when the Client will be disconnected by the broker. This value represents the number of seconds since 1970-01-01 00:00:00 UTC (Unix time). Available since 2.13.
    * @return scheduledDisconnectTime
   **/
-  @ApiModelProperty(value = "The timestamp of when the Client will be disconnected by the broker. This value represents the number of seconds since 1970-01-01 00:00:00 UTC (Unix time). Available since 2.13.")
+  @Schema(description = "The timestamp of when the Client will be disconnected by the broker. This value represents the number of seconds since 1970-01-01 00:00:00 UTC (Unix time). Available since 2.13.")
   public Integer getScheduledDisconnectTime() {
     return scheduledDisconnectTime;
   }
@@ -2000,7 +1998,7 @@ public class MsgVpnClient {
    * Indicates whether the Client is a slow subscriber and blocks for a few seconds when receiving messages.
    * @return slowSubscriber
   **/
-  @ApiModelProperty(value = "Indicates whether the Client is a slow subscriber and blocks for a few seconds when receiving messages.")
+  @Schema(description = "Indicates whether the Client is a slow subscriber and blocks for a few seconds when receiving messages.")
   public Boolean isSlowSubscriber() {
     return slowSubscriber;
   }
@@ -2018,7 +2016,7 @@ public class MsgVpnClient {
    * The date the Client application software was built.
    * @return softwareDate
   **/
-  @ApiModelProperty(value = "The date the Client application software was built.")
+  @Schema(description = "The date the Client application software was built.")
   public String getSoftwareDate() {
     return softwareDate;
   }
@@ -2036,7 +2034,7 @@ public class MsgVpnClient {
    * The version of the Client application software.
    * @return softwareVersion
   **/
-  @ApiModelProperty(value = "The version of the Client application software.")
+  @Schema(description = "The version of the Client application software.")
   public String getSoftwareVersion() {
     return softwareVersion;
   }
@@ -2054,7 +2052,7 @@ public class MsgVpnClient {
    * The description of the TLS cipher used by the Client, which may include cipher name, key exchange and encryption algorithms.
    * @return tlsCipherDescription
   **/
-  @ApiModelProperty(value = "The description of the TLS cipher used by the Client, which may include cipher name, key exchange and encryption algorithms.")
+  @Schema(description = "The description of the TLS cipher used by the Client, which may include cipher name, key exchange and encryption algorithms.")
   public String getTlsCipherDescription() {
     return tlsCipherDescription;
   }
@@ -2072,7 +2070,7 @@ public class MsgVpnClient {
    * Indicates whether the Client TLS connection was downgraded to plain-text to increase performance.
    * @return tlsDowngradedToPlainText
   **/
-  @ApiModelProperty(value = "Indicates whether the Client TLS connection was downgraded to plain-text to increase performance.")
+  @Schema(description = "Indicates whether the Client TLS connection was downgraded to plain-text to increase performance.")
   public Boolean isTlsDowngradedToPlainText() {
     return tlsDowngradedToPlainText;
   }
@@ -2090,7 +2088,7 @@ public class MsgVpnClient {
    * The version of TLS used by the Client.
    * @return tlsVersion
   **/
-  @ApiModelProperty(value = "The version of TLS used by the Client.")
+  @Schema(description = "The version of TLS used by the Client.")
   public String getTlsVersion() {
     return tlsVersion;
   }
@@ -2108,7 +2106,7 @@ public class MsgVpnClient {
    * The number of messages from the Client discarded due to an error while parsing the publish topic.
    * @return topicParseErrorRxDiscardedMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages from the Client discarded due to an error while parsing the publish topic.")
+  @Schema(description = "The number of messages from the Client discarded due to an error while parsing the publish topic.")
   public Long getTopicParseErrorRxDiscardedMsgCount() {
     return topicParseErrorRxDiscardedMsgCount;
   }
@@ -2126,7 +2124,7 @@ public class MsgVpnClient {
    * The amount of messages transmitted to the Client, in bytes (B).
    * @return txByteCount
   **/
-  @ApiModelProperty(value = "The amount of messages transmitted to the Client, in bytes (B).")
+  @Schema(description = "The amount of messages transmitted to the Client, in bytes (B).")
   public Long getTxByteCount() {
     return txByteCount;
   }
@@ -2144,7 +2142,7 @@ public class MsgVpnClient {
    * The current message rate transmitted to the Client, in bytes per second (B/sec).
    * @return txByteRate
   **/
-  @ApiModelProperty(value = "The current message rate transmitted to the Client, in bytes per second (B/sec).")
+  @Schema(description = "The current message rate transmitted to the Client, in bytes per second (B/sec).")
   public Long getTxByteRate() {
     return txByteRate;
   }
@@ -2162,7 +2160,7 @@ public class MsgVpnClient {
    * The number of messages discarded during transmission to the Client.
    * @return txDiscardedMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages discarded during transmission to the Client.")
+  @Schema(description = "The number of messages discarded during transmission to the Client.")
   public Long getTxDiscardedMsgCount() {
     return txDiscardedMsgCount;
   }
@@ -2180,7 +2178,7 @@ public class MsgVpnClient {
    * The number of messages transmitted to the Client.
    * @return txMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages transmitted to the Client.")
+  @Schema(description = "The number of messages transmitted to the Client.")
   public Long getTxMsgCount() {
     return txMsgCount;
   }
@@ -2198,7 +2196,7 @@ public class MsgVpnClient {
    * The current message rate transmitted to the Client, in messages per second (msg/sec).
    * @return txMsgRate
   **/
-  @ApiModelProperty(value = "The current message rate transmitted to the Client, in messages per second (msg/sec).")
+  @Schema(description = "The current message rate transmitted to the Client, in messages per second (msg/sec).")
   public Long getTxMsgRate() {
     return txMsgRate;
   }
@@ -2216,7 +2214,7 @@ public class MsgVpnClient {
    * The amount of time in seconds since the Client connected.
    * @return uptime
   **/
-  @ApiModelProperty(value = "The amount of time in seconds since the Client connected.")
+  @Schema(description = "The amount of time in seconds since the Client connected.")
   public Integer getUptime() {
     return uptime;
   }
@@ -2234,7 +2232,7 @@ public class MsgVpnClient {
    * The user description for the Client, which may include computer name and process ID.
    * @return user
   **/
-  @ApiModelProperty(value = "The user description for the Client, which may include computer name and process ID.")
+  @Schema(description = "The user description for the Client, which may include computer name and process ID.")
   public String getUser() {
     return user;
   }
@@ -2252,7 +2250,7 @@ public class MsgVpnClient {
    * The virtual router used by the Client. The allowed values and their meaning are:  &lt;pre&gt; \&quot;primary\&quot; - The Client is using the primary virtual router. \&quot;backup\&quot; - The Client is using the backup virtual router. \&quot;internal\&quot; - The Client is using the internal virtual router. \&quot;unknown\&quot; - The Client virtual router is unknown. &lt;/pre&gt; 
    * @return virtualRouter
   **/
-  @ApiModelProperty(value = "The virtual router used by the Client. The allowed values and their meaning are:  <pre> \"primary\" - The Client is using the primary virtual router. \"backup\" - The Client is using the backup virtual router. \"internal\" - The Client is using the internal virtual router. \"unknown\" - The Client virtual router is unknown. </pre> ")
+  @Schema(description = "The virtual router used by the Client. The allowed values and their meaning are:  <pre> \"primary\" - The Client is using the primary virtual router. \"backup\" - The Client is using the backup virtual router. \"internal\" - The Client is using the internal virtual router. \"unknown\" - The Client virtual router is unknown. </pre> ")
   public String getVirtualRouter() {
     return virtualRouter;
   }
@@ -2270,7 +2268,7 @@ public class MsgVpnClient {
    * The maximum web transport timeout for the Client being inactive, in seconds.
    * @return webInactiveTimeout
   **/
-  @ApiModelProperty(value = "The maximum web transport timeout for the Client being inactive, in seconds.")
+  @Schema(description = "The maximum web transport timeout for the Client being inactive, in seconds.")
   public Integer getWebInactiveTimeout() {
     return webInactiveTimeout;
   }
@@ -2288,7 +2286,7 @@ public class MsgVpnClient {
    * The maximum web transport message payload size which excludes the size of the message header, in bytes.
    * @return webMaxPayload
   **/
-  @ApiModelProperty(value = "The maximum web transport message payload size which excludes the size of the message header, in bytes.")
+  @Schema(description = "The maximum web transport message payload size which excludes the size of the message header, in bytes.")
   public Long getWebMaxPayload() {
     return webMaxPayload;
   }
@@ -2306,7 +2304,7 @@ public class MsgVpnClient {
    * The number of messages from the Client discarded due to an error while parsing the web message.
    * @return webParseErrorRxDiscardedMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages from the Client discarded due to an error while parsing the web message.")
+  @Schema(description = "The number of messages from the Client discarded due to an error while parsing the web message.")
   public Long getWebParseErrorRxDiscardedMsgCount() {
     return webParseErrorRxDiscardedMsgCount;
   }
@@ -2324,7 +2322,7 @@ public class MsgVpnClient {
    * The remaining web transport timeout for the Client being inactive, in seconds.
    * @return webRemainingTimeout
   **/
-  @ApiModelProperty(value = "The remaining web transport timeout for the Client being inactive, in seconds.")
+  @Schema(description = "The remaining web transport timeout for the Client being inactive, in seconds.")
   public Integer getWebRemainingTimeout() {
     return webRemainingTimeout;
   }
@@ -2342,7 +2340,7 @@ public class MsgVpnClient {
    * The amount of web transport messages received from the Client, in bytes (B).
    * @return webRxByteCount
   **/
-  @ApiModelProperty(value = "The amount of web transport messages received from the Client, in bytes (B).")
+  @Schema(description = "The amount of web transport messages received from the Client, in bytes (B).")
   public Long getWebRxByteCount() {
     return webRxByteCount;
   }
@@ -2360,7 +2358,7 @@ public class MsgVpnClient {
    * The type of encoding used during reception from the Client. The allowed values and their meaning are:  &lt;pre&gt; \&quot;binary\&quot; - The Client is using binary encoding. \&quot;base64\&quot; - The Client is using base64 encoding. \&quot;illegal\&quot; - The Client is using an illegal encoding type. &lt;/pre&gt; 
    * @return webRxEncoding
   **/
-  @ApiModelProperty(value = "The type of encoding used during reception from the Client. The allowed values and their meaning are:  <pre> \"binary\" - The Client is using binary encoding. \"base64\" - The Client is using base64 encoding. \"illegal\" - The Client is using an illegal encoding type. </pre> ")
+  @Schema(description = "The type of encoding used during reception from the Client. The allowed values and their meaning are:  <pre> \"binary\" - The Client is using binary encoding. \"base64\" - The Client is using base64 encoding. \"illegal\" - The Client is using an illegal encoding type. </pre> ")
   public String getWebRxEncoding() {
     return webRxEncoding;
   }
@@ -2378,7 +2376,7 @@ public class MsgVpnClient {
    * The number of web transport messages received from the Client.
    * @return webRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of web transport messages received from the Client.")
+  @Schema(description = "The number of web transport messages received from the Client.")
   public Long getWebRxMsgCount() {
     return webRxMsgCount;
   }
@@ -2396,7 +2394,7 @@ public class MsgVpnClient {
    * The type of web transport used during reception from the Client. The allowed values and their meaning are:  &lt;pre&gt; \&quot;ws-binary\&quot; - The Client is using WebSocket binary transport. \&quot;http-binary-streaming\&quot; - The Client is using HTTP binary streaming transport. \&quot;http-binary\&quot; - The Client is using HTTP binary transport. \&quot;http-base64\&quot; - The Client is using HTTP base64 transport. &lt;/pre&gt; 
    * @return webRxProtocol
   **/
-  @ApiModelProperty(value = "The type of web transport used during reception from the Client. The allowed values and their meaning are:  <pre> \"ws-binary\" - The Client is using WebSocket binary transport. \"http-binary-streaming\" - The Client is using HTTP binary streaming transport. \"http-binary\" - The Client is using HTTP binary transport. \"http-base64\" - The Client is using HTTP base64 transport. </pre> ")
+  @Schema(description = "The type of web transport used during reception from the Client. The allowed values and their meaning are:  <pre> \"ws-binary\" - The Client is using WebSocket binary transport. \"http-binary-streaming\" - The Client is using HTTP binary streaming transport. \"http-binary\" - The Client is using HTTP binary transport. \"http-base64\" - The Client is using HTTP base64 transport. </pre> ")
   public String getWebRxProtocol() {
     return webRxProtocol;
   }
@@ -2414,7 +2412,7 @@ public class MsgVpnClient {
    * The number of web transport requests received from the Client (HTTP only). Not available for WebSockets.
    * @return webRxRequestCount
   **/
-  @ApiModelProperty(value = "The number of web transport requests received from the Client (HTTP only). Not available for WebSockets.")
+  @Schema(description = "The number of web transport requests received from the Client (HTTP only). Not available for WebSockets.")
   public Long getWebRxRequestCount() {
     return webRxRequestCount;
   }
@@ -2432,7 +2430,7 @@ public class MsgVpnClient {
    * The number of web transport responses transmitted to the Client on the receive connection (HTTP only). Not available for WebSockets.
    * @return webRxResponseCount
   **/
-  @ApiModelProperty(value = "The number of web transport responses transmitted to the Client on the receive connection (HTTP only). Not available for WebSockets.")
+  @Schema(description = "The number of web transport responses transmitted to the Client on the receive connection (HTTP only). Not available for WebSockets.")
   public Long getWebRxResponseCount() {
     return webRxResponseCount;
   }
@@ -2450,7 +2448,7 @@ public class MsgVpnClient {
    * The TCP state of the receive connection from the Client. When fully operational, should be: established. See RFC 793 for further details. The allowed values and their meaning are:  &lt;pre&gt; \&quot;closed\&quot; - No connection state at all. \&quot;listen\&quot; - Waiting for a connection request from any remote TCP and port. \&quot;syn-sent\&quot; - Waiting for a matching connection request after having sent a connection request. \&quot;syn-received\&quot; - Waiting for a confirming connection request acknowledgment after having both received and sent a connection request. \&quot;established\&quot; - An open connection, data received can be delivered to the user. \&quot;close-wait\&quot; - Waiting for a connection termination request from the local user. \&quot;fin-wait-1\&quot; - Waiting for a connection termination request from the remote TCP, or an acknowledgment of the connection termination request previously sent. \&quot;closing\&quot; - Waiting for a connection termination request acknowledgment from the remote TCP. \&quot;last-ack\&quot; - Waiting for an acknowledgment of the connection termination request previously sent to the remote TCP. \&quot;fin-wait-2\&quot; - Waiting for a connection termination request from the remote TCP. \&quot;time-wait\&quot; - Waiting for enough time to pass to be sure the remote TCP received the acknowledgment of its connection termination request. &lt;/pre&gt; 
    * @return webRxTcpState
   **/
-  @ApiModelProperty(value = "The TCP state of the receive connection from the Client. When fully operational, should be: established. See RFC 793 for further details. The allowed values and their meaning are:  <pre> \"closed\" - No connection state at all. \"listen\" - Waiting for a connection request from any remote TCP and port. \"syn-sent\" - Waiting for a matching connection request after having sent a connection request. \"syn-received\" - Waiting for a confirming connection request acknowledgment after having both received and sent a connection request. \"established\" - An open connection, data received can be delivered to the user. \"close-wait\" - Waiting for a connection termination request from the local user. \"fin-wait-1\" - Waiting for a connection termination request from the remote TCP, or an acknowledgment of the connection termination request previously sent. \"closing\" - Waiting for a connection termination request acknowledgment from the remote TCP. \"last-ack\" - Waiting for an acknowledgment of the connection termination request previously sent to the remote TCP. \"fin-wait-2\" - Waiting for a connection termination request from the remote TCP. \"time-wait\" - Waiting for enough time to pass to be sure the remote TCP received the acknowledgment of its connection termination request. </pre> ")
+  @Schema(description = "The TCP state of the receive connection from the Client. When fully operational, should be: established. See RFC 793 for further details. The allowed values and their meaning are:  <pre> \"closed\" - No connection state at all. \"listen\" - Waiting for a connection request from any remote TCP and port. \"syn-sent\" - Waiting for a matching connection request after having sent a connection request. \"syn-received\" - Waiting for a confirming connection request acknowledgment after having both received and sent a connection request. \"established\" - An open connection, data received can be delivered to the user. \"close-wait\" - Waiting for a connection termination request from the local user. \"fin-wait-1\" - Waiting for a connection termination request from the remote TCP, or an acknowledgment of the connection termination request previously sent. \"closing\" - Waiting for a connection termination request acknowledgment from the remote TCP. \"last-ack\" - Waiting for an acknowledgment of the connection termination request previously sent to the remote TCP. \"fin-wait-2\" - Waiting for a connection termination request from the remote TCP. \"time-wait\" - Waiting for enough time to pass to be sure the remote TCP received the acknowledgment of its connection termination request. </pre> ")
   public String getWebRxTcpState() {
     return webRxTcpState;
   }
@@ -2468,7 +2466,7 @@ public class MsgVpnClient {
    * The description of the TLS cipher received from the Client, which may include cipher name, key exchange and encryption algorithms.
    * @return webRxTlsCipherDescription
   **/
-  @ApiModelProperty(value = "The description of the TLS cipher received from the Client, which may include cipher name, key exchange and encryption algorithms.")
+  @Schema(description = "The description of the TLS cipher received from the Client, which may include cipher name, key exchange and encryption algorithms.")
   public String getWebRxTlsCipherDescription() {
     return webRxTlsCipherDescription;
   }
@@ -2486,7 +2484,7 @@ public class MsgVpnClient {
    * The version of TLS used during reception from the Client.
    * @return webRxTlsVersion
   **/
-  @ApiModelProperty(value = "The version of TLS used during reception from the Client.")
+  @Schema(description = "The version of TLS used during reception from the Client.")
   public String getWebRxTlsVersion() {
     return webRxTlsVersion;
   }
@@ -2504,7 +2502,7 @@ public class MsgVpnClient {
    * The identifier (ID) of the web transport session for the Client.
    * @return webSessionId
   **/
-  @ApiModelProperty(value = "The identifier (ID) of the web transport session for the Client.")
+  @Schema(description = "The identifier (ID) of the web transport session for the Client.")
   public String getWebSessionId() {
     return webSessionId;
   }
@@ -2522,7 +2520,7 @@ public class MsgVpnClient {
    * The amount of web transport messages transmitted to the Client, in bytes (B).
    * @return webTxByteCount
   **/
-  @ApiModelProperty(value = "The amount of web transport messages transmitted to the Client, in bytes (B).")
+  @Schema(description = "The amount of web transport messages transmitted to the Client, in bytes (B).")
   public Long getWebTxByteCount() {
     return webTxByteCount;
   }
@@ -2540,7 +2538,7 @@ public class MsgVpnClient {
    * The type of encoding used during transmission to the Client. The allowed values and their meaning are:  &lt;pre&gt; \&quot;binary\&quot; - The Client is using binary encoding. \&quot;base64\&quot; - The Client is using base64 encoding. \&quot;illegal\&quot; - The Client is using an illegal encoding type. &lt;/pre&gt; 
    * @return webTxEncoding
   **/
-  @ApiModelProperty(value = "The type of encoding used during transmission to the Client. The allowed values and their meaning are:  <pre> \"binary\" - The Client is using binary encoding. \"base64\" - The Client is using base64 encoding. \"illegal\" - The Client is using an illegal encoding type. </pre> ")
+  @Schema(description = "The type of encoding used during transmission to the Client. The allowed values and their meaning are:  <pre> \"binary\" - The Client is using binary encoding. \"base64\" - The Client is using base64 encoding. \"illegal\" - The Client is using an illegal encoding type. </pre> ")
   public String getWebTxEncoding() {
     return webTxEncoding;
   }
@@ -2558,7 +2556,7 @@ public class MsgVpnClient {
    * The number of web transport messages transmitted to the Client.
    * @return webTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of web transport messages transmitted to the Client.")
+  @Schema(description = "The number of web transport messages transmitted to the Client.")
   public Long getWebTxMsgCount() {
     return webTxMsgCount;
   }
@@ -2576,7 +2574,7 @@ public class MsgVpnClient {
    * The type of web transport used during transmission to the Client. The allowed values and their meaning are:  &lt;pre&gt; \&quot;ws-binary\&quot; - The Client is using WebSocket binary transport. \&quot;http-binary-streaming\&quot; - The Client is using HTTP binary streaming transport. \&quot;http-binary\&quot; - The Client is using HTTP binary transport. \&quot;http-base64\&quot; - The Client is using HTTP base64 transport. &lt;/pre&gt; 
    * @return webTxProtocol
   **/
-  @ApiModelProperty(value = "The type of web transport used during transmission to the Client. The allowed values and their meaning are:  <pre> \"ws-binary\" - The Client is using WebSocket binary transport. \"http-binary-streaming\" - The Client is using HTTP binary streaming transport. \"http-binary\" - The Client is using HTTP binary transport. \"http-base64\" - The Client is using HTTP base64 transport. </pre> ")
+  @Schema(description = "The type of web transport used during transmission to the Client. The allowed values and their meaning are:  <pre> \"ws-binary\" - The Client is using WebSocket binary transport. \"http-binary-streaming\" - The Client is using HTTP binary streaming transport. \"http-binary\" - The Client is using HTTP binary transport. \"http-base64\" - The Client is using HTTP base64 transport. </pre> ")
   public String getWebTxProtocol() {
     return webTxProtocol;
   }
@@ -2594,7 +2592,7 @@ public class MsgVpnClient {
    * The number of web transport requests transmitted to the Client (HTTP only). Not available for WebSockets.
    * @return webTxRequestCount
   **/
-  @ApiModelProperty(value = "The number of web transport requests transmitted to the Client (HTTP only). Not available for WebSockets.")
+  @Schema(description = "The number of web transport requests transmitted to the Client (HTTP only). Not available for WebSockets.")
   public Long getWebTxRequestCount() {
     return webTxRequestCount;
   }
@@ -2612,7 +2610,7 @@ public class MsgVpnClient {
    * The number of web transport responses received from the Client on the transmit connection (HTTP only). Not available for WebSockets.
    * @return webTxResponseCount
   **/
-  @ApiModelProperty(value = "The number of web transport responses received from the Client on the transmit connection (HTTP only). Not available for WebSockets.")
+  @Schema(description = "The number of web transport responses received from the Client on the transmit connection (HTTP only). Not available for WebSockets.")
   public Long getWebTxResponseCount() {
     return webTxResponseCount;
   }
@@ -2630,7 +2628,7 @@ public class MsgVpnClient {
    * The TCP state of the transmit connection to the Client. When fully operational, should be: established. See RFC 793 for further details. The allowed values and their meaning are:  &lt;pre&gt; \&quot;closed\&quot; - No connection state at all. \&quot;listen\&quot; - Waiting for a connection request from any remote TCP and port. \&quot;syn-sent\&quot; - Waiting for a matching connection request after having sent a connection request. \&quot;syn-received\&quot; - Waiting for a confirming connection request acknowledgment after having both received and sent a connection request. \&quot;established\&quot; - An open connection, data received can be delivered to the user. \&quot;close-wait\&quot; - Waiting for a connection termination request from the local user. \&quot;fin-wait-1\&quot; - Waiting for a connection termination request from the remote TCP, or an acknowledgment of the connection termination request previously sent. \&quot;closing\&quot; - Waiting for a connection termination request acknowledgment from the remote TCP. \&quot;last-ack\&quot; - Waiting for an acknowledgment of the connection termination request previously sent to the remote TCP. \&quot;fin-wait-2\&quot; - Waiting for a connection termination request from the remote TCP. \&quot;time-wait\&quot; - Waiting for enough time to pass to be sure the remote TCP received the acknowledgment of its connection termination request. &lt;/pre&gt; 
    * @return webTxTcpState
   **/
-  @ApiModelProperty(value = "The TCP state of the transmit connection to the Client. When fully operational, should be: established. See RFC 793 for further details. The allowed values and their meaning are:  <pre> \"closed\" - No connection state at all. \"listen\" - Waiting for a connection request from any remote TCP and port. \"syn-sent\" - Waiting for a matching connection request after having sent a connection request. \"syn-received\" - Waiting for a confirming connection request acknowledgment after having both received and sent a connection request. \"established\" - An open connection, data received can be delivered to the user. \"close-wait\" - Waiting for a connection termination request from the local user. \"fin-wait-1\" - Waiting for a connection termination request from the remote TCP, or an acknowledgment of the connection termination request previously sent. \"closing\" - Waiting for a connection termination request acknowledgment from the remote TCP. \"last-ack\" - Waiting for an acknowledgment of the connection termination request previously sent to the remote TCP. \"fin-wait-2\" - Waiting for a connection termination request from the remote TCP. \"time-wait\" - Waiting for enough time to pass to be sure the remote TCP received the acknowledgment of its connection termination request. </pre> ")
+  @Schema(description = "The TCP state of the transmit connection to the Client. When fully operational, should be: established. See RFC 793 for further details. The allowed values and their meaning are:  <pre> \"closed\" - No connection state at all. \"listen\" - Waiting for a connection request from any remote TCP and port. \"syn-sent\" - Waiting for a matching connection request after having sent a connection request. \"syn-received\" - Waiting for a confirming connection request acknowledgment after having both received and sent a connection request. \"established\" - An open connection, data received can be delivered to the user. \"close-wait\" - Waiting for a connection termination request from the local user. \"fin-wait-1\" - Waiting for a connection termination request from the remote TCP, or an acknowledgment of the connection termination request previously sent. \"closing\" - Waiting for a connection termination request acknowledgment from the remote TCP. \"last-ack\" - Waiting for an acknowledgment of the connection termination request previously sent to the remote TCP. \"fin-wait-2\" - Waiting for a connection termination request from the remote TCP. \"time-wait\" - Waiting for enough time to pass to be sure the remote TCP received the acknowledgment of its connection termination request. </pre> ")
   public String getWebTxTcpState() {
     return webTxTcpState;
   }
@@ -2648,7 +2646,7 @@ public class MsgVpnClient {
    * The description of the TLS cipher transmitted to the Client, which may include cipher name, key exchange and encryption algorithms.
    * @return webTxTlsCipherDescription
   **/
-  @ApiModelProperty(value = "The description of the TLS cipher transmitted to the Client, which may include cipher name, key exchange and encryption algorithms.")
+  @Schema(description = "The description of the TLS cipher transmitted to the Client, which may include cipher name, key exchange and encryption algorithms.")
   public String getWebTxTlsCipherDescription() {
     return webTxTlsCipherDescription;
   }
@@ -2666,7 +2664,7 @@ public class MsgVpnClient {
    * The version of TLS used during transmission to the Client.
    * @return webTxTlsVersion
   **/
-  @ApiModelProperty(value = "The version of TLS used during transmission to the Client.")
+  @Schema(description = "The version of TLS used during transmission to the Client.")
   public String getWebTxTlsVersion() {
     return webTxTlsVersion;
   }
@@ -2966,4 +2964,3 @@ public class MsgVpnClient {
   }
 
 }
-

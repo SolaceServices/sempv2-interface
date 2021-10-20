@@ -7,7 +7,8 @@ import java.util.Objects;
 
 import com.google.gson.annotations.SerializedName;
 
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
+
 
 /**
  * API token request model
@@ -25,7 +26,7 @@ public class ApiTokenRequest
 	/**
 	 * @return the username
 	*/
-	@ApiModelProperty(value = "Account username")
+	@Schema(name = "Account username")
 	public String getUsername()
 	{
 		return username;
@@ -42,7 +43,7 @@ public class ApiTokenRequest
 	/**
 	 * @return the password
 	 */
-	@ApiModelProperty(value = "Account password")
+	@Schema(name = "Account password")
 	public String getPassword()
 	{
 		return password;

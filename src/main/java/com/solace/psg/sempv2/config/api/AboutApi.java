@@ -1,8 +1,8 @@
 /*
  * SEMP (Solace Element Management Protocol)
- * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any (non-exclusively) of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written|See note 3 Write-Only|Attribute can only be written, not read| Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version|    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object|New attribute values|Object attributes and metadata|Set to default (but see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters \"q1\" and \"q2\" ; with values \"val1\" and \"val2\" respectively /SEMP/v2/config/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/config/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/config/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/config/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/config/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/config/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/config/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/config/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/config/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/config/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/config/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|For PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT. If the object does not exist, it is created first.    
+ * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any combination of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written.|See note 3 Write-Only|Attribute can only be written, not read, unless the attribute is also opaque|See the documentation for the opaque property Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version| Opaque|Attribute can be set or retrieved in opaque form when the `opaquePassword` query parameter is present|See the `opaquePassword` query parameter documentation    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    In the monitoring API, any non-identifying attribute may not be returned in a GET.  ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object (see note 5)|New attribute values|Object attributes and metadata|Set to default, with certain exceptions (see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters ; \"q1\" and \"q2\" with values \"val1\" and \"val2\" respectively /SEMP/v2/config/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/config/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/config/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/config/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/config/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/config/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/config/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/config/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/config/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/config/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/config/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ### opaquePassword  Attributes with the opaque property are also write-only and so cannot normally be retrieved in a GET. However, when a password is provided in the `opaquePassword` query parameter, attributes with the opaque property are retrieved in a GET in opaque form, encrypted with this password. The query parameter can also be used on a POST, PATCH, or PUT to set opaque attributes using opaque attribute values retrieved in a GET, so long as:  1. the same password that was used to retrieve the opaque attribute values is provided; and  2. the broker to which the request is being sent has the same major and minor SEMP version as the broker that produced the opaque attribute values.  The password provided in the query parameter must be a minimum of 8 characters and a maximum of 128 characters.  The query parameter can only be used in the configuration API, and only over HTTPS.  ## Help  Visit [our website](https://solace.com) to learn more about Solace.  You can also download the SEMP API specifications by clicking [here](https://solace.com/downloads/).  If you need additional support, please contact us at [support@solace.com](mailto:support@solace.com).  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|On a PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT, except in the following two cases: there is a mutual requires relationship with another non-write-only attribute and both attributes are absent from the request; or the attribute is also opaque and the `opaquePassword` query parameter is provided in the request. 5|On a PUT, if the object does not exist, it is created first.  
  *
- * OpenAPI spec version: 2.14
+ * OpenAPI spec version: 2.17
  * Contact: support@solace.com
  *
  * NOTE: This class is auto generated by the swagger code generator program.
@@ -10,12 +10,7 @@
  * Do not edit the class manually.
  */
 
-
 package com.solace.psg.sempv2.config.api;
-
-import com.google.gson.reflect.TypeToken;
-
-import java.io.IOException;
 
 import com.solace.psg.sempv2.apiclient.ApiCallback;
 import com.solace.psg.sempv2.apiclient.ApiClient;
@@ -25,7 +20,12 @@ import com.solace.psg.sempv2.apiclient.Configuration;
 import com.solace.psg.sempv2.apiclient.Pair;
 import com.solace.psg.sempv2.apiclient.ProgressRequestBody;
 import com.solace.psg.sempv2.apiclient.ProgressResponseBody;
-import com.solace.psg.sempv2.auth.HttpBasicAuth;
+
+import com.google.gson.reflect.TypeToken;
+
+import java.io.IOException;
+
+
 import com.solace.psg.sempv2.config.model.AboutApiResponse;
 import com.solace.psg.sempv2.config.model.AboutResponse;
 import com.solace.psg.sempv2.config.model.AboutUserMsgVpnResponse;
@@ -60,20 +60,23 @@ public class AboutApi {
 
     /**
      * Build call for getAbout
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call getAboutCall(List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call getAboutCall(String opaquePassword, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/about";
 
         List<Pair> localVarQueryParams = new ArrayList<Pair>();
         List<Pair> localVarCollectionQueryParams = new ArrayList<Pair>();
+        if (opaquePassword != null)
+        localVarQueryParams.addAll(apiClient.parameterToPair("opaquePassword", opaquePassword));
         if (select != null)
         localVarCollectionQueryParams.addAll(apiClient.parameterToPairs("csv", "select", select));
 
@@ -88,7 +91,7 @@ public class AboutApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -105,40 +108,45 @@ public class AboutApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call getAboutValidateBeforeCall(List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    private com.squareup.okhttp.Call getAboutValidateBeforeCall(String opaquePassword, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         
-
-        com.squareup.okhttp.Call call = getAboutCall(select, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = getAboutCall(opaquePassword, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get an About object.
      * Get an About object.  This provides metadata about the SEMP API, such as the version of the API supported by the broker.    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.13.
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return AboutResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public AboutResponse getAbout(List<String> select) throws ApiException {
-        ApiResponse<AboutResponse> resp = getAboutWithHttpInfo(select);
+    public AboutResponse getAbout(String opaquePassword, List<String> select) throws ApiException {
+        ApiResponse<AboutResponse> resp = getAboutWithHttpInfo(opaquePassword, select);
         return resp.getData();
     }
 
     /**
      * Get an About object.
      * Get an About object.  This provides metadata about the SEMP API, such as the version of the API supported by the broker.    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.13.
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;AboutResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<AboutResponse> getAboutWithHttpInfo(List<String> select) throws ApiException {
-        com.squareup.okhttp.Call call = getAboutValidateBeforeCall(select, null, null);
+    public ApiResponse<AboutResponse> getAboutWithHttpInfo(String opaquePassword, List<String> select) throws ApiException {
+        com.squareup.okhttp.Call call = getAboutValidateBeforeCall(opaquePassword, select, null, null);
         Type localVarReturnType = new TypeToken<AboutResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
@@ -146,12 +154,13 @@ public class AboutApi {
     /**
      * Get an About object. (asynchronously)
      * Get an About object.  This provides metadata about the SEMP API, such as the version of the API supported by the broker.    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.13.
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call getAboutAsync(List<String> select, final ApiCallback<AboutResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call getAboutAsync(String opaquePassword, List<String> select, final ApiCallback<AboutResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -172,7 +181,7 @@ public class AboutApi {
             };
         }
 
-        com.squareup.okhttp.Call call = getAboutValidateBeforeCall(select, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = getAboutValidateBeforeCall(opaquePassword, select, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<AboutResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
@@ -186,7 +195,7 @@ public class AboutApi {
      */
     public com.squareup.okhttp.Call getAboutApiCall(final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/about/api";
 
@@ -204,7 +213,7 @@ public class AboutApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -221,22 +230,25 @@ public class AboutApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getAboutApiValidateBeforeCall(final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         
-
         com.squareup.okhttp.Call call = getAboutApiCall(progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get an API Description object.
-     * Get an API Description object. The API Description object provides metadata about the SEMP API.  A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.4.
+     * Get an API Description object. The API Description object provides metadata about the SEMP API.  A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
      * @return AboutApiResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
@@ -247,7 +259,7 @@ public class AboutApi {
 
     /**
      * Get an API Description object.
-     * Get an API Description object. The API Description object provides metadata about the SEMP API.  A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.4.
+     * Get an API Description object. The API Description object provides metadata about the SEMP API.  A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
      * @return ApiResponse&lt;AboutApiResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
@@ -259,7 +271,7 @@ public class AboutApi {
 
     /**
      * Get an API Description object. (asynchronously)
-     * Get an API Description object. The API Description object provides metadata about the SEMP API.  A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.4.
+     * Get an API Description object. The API Description object provides metadata about the SEMP API.  A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
@@ -292,20 +304,23 @@ public class AboutApi {
     }
     /**
      * Build call for getAboutUser
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call getAboutUserCall(List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call getAboutUserCall(String opaquePassword, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/about/user";
 
         List<Pair> localVarQueryParams = new ArrayList<Pair>();
         List<Pair> localVarCollectionQueryParams = new ArrayList<Pair>();
+        if (opaquePassword != null)
+        localVarQueryParams.addAll(apiClient.parameterToPair("opaquePassword", opaquePassword));
         if (select != null)
         localVarCollectionQueryParams.addAll(apiClient.parameterToPairs("csv", "select", select));
 
@@ -320,7 +335,7 @@ public class AboutApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -337,53 +352,59 @@ public class AboutApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call getAboutUserValidateBeforeCall(List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    private com.squareup.okhttp.Call getAboutUserValidateBeforeCall(String opaquePassword, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         
-
-        com.squareup.okhttp.Call call = getAboutUserCall(select, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = getAboutUserCall(opaquePassword, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a User object.
-     * Get a User object.  This provides information about the access level for the username used to access the SEMP API.    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.8.
+     * Get a User object.  This provides information about the access level for the username used to access the SEMP API.    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return AboutUserResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public AboutUserResponse getAboutUser(List<String> select) throws ApiException {
-        ApiResponse<AboutUserResponse> resp = getAboutUserWithHttpInfo(select);
+    public AboutUserResponse getAboutUser(String opaquePassword, List<String> select) throws ApiException {
+        ApiResponse<AboutUserResponse> resp = getAboutUserWithHttpInfo(opaquePassword, select);
         return resp.getData();
     }
 
     /**
      * Get a User object.
-     * Get a User object.  This provides information about the access level for the username used to access the SEMP API.    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.8.
+     * Get a User object.  This provides information about the access level for the username used to access the SEMP API.    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;AboutUserResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<AboutUserResponse> getAboutUserWithHttpInfo(List<String> select) throws ApiException {
-        com.squareup.okhttp.Call call = getAboutUserValidateBeforeCall(select, null, null);
+    public ApiResponse<AboutUserResponse> getAboutUserWithHttpInfo(String opaquePassword, List<String> select) throws ApiException {
+        com.squareup.okhttp.Call call = getAboutUserValidateBeforeCall(opaquePassword, select, null, null);
         Type localVarReturnType = new TypeToken<AboutUserResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
 
     /**
      * Get a User object. (asynchronously)
-     * Get a User object.  This provides information about the access level for the username used to access the SEMP API.    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.8.
+     * Get a User object.  This provides information about the access level for the username used to access the SEMP API.    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call getAboutUserAsync(List<String> select, final ApiCallback<AboutUserResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call getAboutUserAsync(String opaquePassword, List<String> select, final ApiCallback<AboutUserResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -404,7 +425,7 @@ public class AboutApi {
             };
         }
 
-        com.squareup.okhttp.Call call = getAboutUserValidateBeforeCall(select, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = getAboutUserValidateBeforeCall(opaquePassword, select, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<AboutUserResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
@@ -412,21 +433,24 @@ public class AboutApi {
     /**
      * Build call for getAboutUserMsgVpn
      * @param msgVpnName The name of the Message VPN. (required)
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param progressListener Progress listener
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call getAboutUserMsgVpnCall(String msgVpnName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call getAboutUserMsgVpnCall(String msgVpnName, String opaquePassword, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/about/user/msgVpns/{msgVpnName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
 
         List<Pair> localVarQueryParams = new ArrayList<Pair>();
         List<Pair> localVarCollectionQueryParams = new ArrayList<Pair>();
+        if (opaquePassword != null)
+        localVarQueryParams.addAll(apiClient.parameterToPair("opaquePassword", opaquePassword));
         if (select != null)
         localVarCollectionQueryParams.addAll(apiClient.parameterToPairs("csv", "select", select));
 
@@ -441,7 +465,7 @@ public class AboutApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -458,61 +482,66 @@ public class AboutApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call getAboutUserMsgVpnValidateBeforeCall(String msgVpnName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
+    private com.squareup.okhttp.Call getAboutUserMsgVpnValidateBeforeCall(String msgVpnName, String opaquePassword, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getAboutUserMsgVpn(Async)");
         }
         
-
-        com.squareup.okhttp.Call call = getAboutUserMsgVpnCall(msgVpnName, select, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = getAboutUserMsgVpnCall(msgVpnName, opaquePassword, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a User Message VPN object.
-     * Get a User Message VPN object.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated :---|:---:|:---:|:---: msgVpnName|x||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.8.
+     * Get a User Message VPN object.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated|Opaque :---|:---:|:---:|:---:|:---: msgVpnName|x|||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
      * @param msgVpnName The name of the Message VPN. (required)
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return AboutUserMsgVpnResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public AboutUserMsgVpnResponse getAboutUserMsgVpn(String msgVpnName, List<String> select) throws ApiException {
-        ApiResponse<AboutUserMsgVpnResponse> resp = getAboutUserMsgVpnWithHttpInfo(msgVpnName, select);
+    public AboutUserMsgVpnResponse getAboutUserMsgVpn(String msgVpnName, String opaquePassword, List<String> select) throws ApiException {
+        ApiResponse<AboutUserMsgVpnResponse> resp = getAboutUserMsgVpnWithHttpInfo(msgVpnName, opaquePassword, select);
         return resp.getData();
     }
 
     /**
      * Get a User Message VPN object.
-     * Get a User Message VPN object.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated :---|:---:|:---:|:---: msgVpnName|x||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.8.
+     * Get a User Message VPN object.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated|Opaque :---|:---:|:---:|:---:|:---: msgVpnName|x|||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
      * @param msgVpnName The name of the Message VPN. (required)
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;AboutUserMsgVpnResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<AboutUserMsgVpnResponse> getAboutUserMsgVpnWithHttpInfo(String msgVpnName, List<String> select) throws ApiException {
-        com.squareup.okhttp.Call call = getAboutUserMsgVpnValidateBeforeCall(msgVpnName, select, null, null);
+    public ApiResponse<AboutUserMsgVpnResponse> getAboutUserMsgVpnWithHttpInfo(String msgVpnName, String opaquePassword, List<String> select) throws ApiException {
+        com.squareup.okhttp.Call call = getAboutUserMsgVpnValidateBeforeCall(msgVpnName, opaquePassword, select, null, null);
         Type localVarReturnType = new TypeToken<AboutUserMsgVpnResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
 
     /**
      * Get a User Message VPN object. (asynchronously)
-     * Get a User Message VPN object.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated :---|:---:|:---:|:---: msgVpnName|x||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.8.
+     * Get a User Message VPN object.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated|Opaque :---|:---:|:---:|:---:|:---: msgVpnName|x|||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
      * @param msgVpnName The name of the Message VPN. (required)
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call getAboutUserMsgVpnAsync(String msgVpnName, List<String> select, final ApiCallback<AboutUserMsgVpnResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call getAboutUserMsgVpnAsync(String msgVpnName, String opaquePassword, List<String> select, final ApiCallback<AboutUserMsgVpnResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -533,7 +562,7 @@ public class AboutApi {
             };
         }
 
-        com.squareup.okhttp.Call call = getAboutUserMsgVpnValidateBeforeCall(msgVpnName, select, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = getAboutUserMsgVpnValidateBeforeCall(msgVpnName, opaquePassword, select, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<AboutUserMsgVpnResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;
@@ -542,6 +571,7 @@ public class AboutApi {
      * Build call for getAboutUserMsgVpns
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param where Include in the response only objects where certain conditions are true. See the the documentation for the &#x60;where&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param progressListener Progress listener
@@ -549,9 +579,9 @@ public class AboutApi {
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
      */
-    public com.squareup.okhttp.Call getAboutUserMsgVpnsCall(Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    public com.squareup.okhttp.Call getAboutUserMsgVpnsCall(Integer count, String cursor, String opaquePassword, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/about/user/msgVpns";
 
@@ -561,6 +591,8 @@ public class AboutApi {
         localVarQueryParams.addAll(apiClient.parameterToPair("count", count));
         if (cursor != null)
         localVarQueryParams.addAll(apiClient.parameterToPair("cursor", cursor));
+        if (opaquePassword != null)
+        localVarQueryParams.addAll(apiClient.parameterToPair("opaquePassword", opaquePassword));
         if (where != null)
         localVarCollectionQueryParams.addAll(apiClient.parameterToPairs("csv", "where", where));
         if (select != null)
@@ -577,7 +609,7 @@ public class AboutApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -594,62 +626,68 @@ public class AboutApi {
             });
         }
 
-        String[] localVarAuthNames = new String[] { HttpBasicAuth.AUTH_TYPE };
+        String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
-    private com.squareup.okhttp.Call getAboutUserMsgVpnsValidateBeforeCall(Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
+    private com.squareup.okhttp.Call getAboutUserMsgVpnsValidateBeforeCall(Integer count, String cursor, String opaquePassword, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         
-
-        com.squareup.okhttp.Call call = getAboutUserMsgVpnsCall(count, cursor, where, select, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = getAboutUserMsgVpnsCall(count, cursor, opaquePassword, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
      * Get a list of User Message VPN objects.
-     * Get a list of User Message VPN objects.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated :---|:---:|:---:|:---: msgVpnName|x||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.8.
+     * Get a list of User Message VPN objects.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated|Opaque :---|:---:|:---:|:---:|:---: msgVpnName|x|||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param where Include in the response only objects where certain conditions are true. See the the documentation for the &#x60;where&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return AboutUserMsgVpnsResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public AboutUserMsgVpnsResponse getAboutUserMsgVpns(Integer count, String cursor, List<String> where, List<String> select) throws ApiException {
-        ApiResponse<AboutUserMsgVpnsResponse> resp = getAboutUserMsgVpnsWithHttpInfo(count, cursor, where, select);
+    public AboutUserMsgVpnsResponse getAboutUserMsgVpns(Integer count, String cursor, String opaquePassword, List<String> where, List<String> select) throws ApiException {
+        ApiResponse<AboutUserMsgVpnsResponse> resp = getAboutUserMsgVpnsWithHttpInfo(count, cursor, opaquePassword, where, select);
         return resp.getData();
     }
 
     /**
      * Get a list of User Message VPN objects.
-     * Get a list of User Message VPN objects.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated :---|:---:|:---:|:---: msgVpnName|x||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.8.
+     * Get a list of User Message VPN objects.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated|Opaque :---|:---:|:---:|:---:|:---: msgVpnName|x|||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param where Include in the response only objects where certain conditions are true. See the the documentation for the &#x60;where&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;AboutUserMsgVpnsResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
      */
-    public ApiResponse<AboutUserMsgVpnsResponse> getAboutUserMsgVpnsWithHttpInfo(Integer count, String cursor, List<String> where, List<String> select) throws ApiException {
-        com.squareup.okhttp.Call call = getAboutUserMsgVpnsValidateBeforeCall(count, cursor, where, select, null, null);
+    public ApiResponse<AboutUserMsgVpnsResponse> getAboutUserMsgVpnsWithHttpInfo(Integer count, String cursor, String opaquePassword, List<String> where, List<String> select) throws ApiException {
+        com.squareup.okhttp.Call call = getAboutUserMsgVpnsValidateBeforeCall(count, cursor, opaquePassword, where, select, null, null);
         Type localVarReturnType = new TypeToken<AboutUserMsgVpnsResponse>(){}.getType();
         return apiClient.execute(call, localVarReturnType);
     }
 
     /**
      * Get a list of User Message VPN objects. (asynchronously)
-     * Get a list of User Message VPN objects.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated :---|:---:|:---:|:---: msgVpnName|x||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.8.
+     * Get a list of User Message VPN objects.  This provides information about the Message VPN access level for the username used to access the SEMP API.   Attribute|Identifying|Write-Only|Deprecated|Opaque :---|:---:|:---:|:---:|:---: msgVpnName|x|||    A SEMP client authorized with a minimum access scope/level of \&quot;global/none\&quot; is required to perform this operation.  This has been available since 2.2.
      * @param count Limit the count of objects in the response. See the documentation for the &#x60;count&#x60; parameter. (optional, default to 10)
      * @param cursor The cursor, or position, for the next page of objects. See the documentation for the &#x60;cursor&#x60; parameter. (optional)
+     * @param opaquePassword Accept opaque attributes in the request or return opaque attributes in the response, encrypted with the specified password. See that documentation for the &#x60;opaquePassword&#x60; parameter. (optional)
      * @param where Include in the response only objects where certain conditions are true. See the the documentation for the &#x60;where&#x60; parameter. (optional)
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
      */
-    public com.squareup.okhttp.Call getAboutUserMsgVpnsAsync(Integer count, String cursor, List<String> where, List<String> select, final ApiCallback<AboutUserMsgVpnsResponse> callback) throws ApiException {
+    public com.squareup.okhttp.Call getAboutUserMsgVpnsAsync(Integer count, String cursor, String opaquePassword, List<String> where, List<String> select, final ApiCallback<AboutUserMsgVpnsResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
         ProgressRequestBody.ProgressRequestListener progressRequestListener = null;
@@ -670,7 +708,7 @@ public class AboutApi {
             };
         }
 
-        com.squareup.okhttp.Call call = getAboutUserMsgVpnsValidateBeforeCall(count, cursor, where, select, progressListener, progressRequestListener);
+        com.squareup.okhttp.Call call = getAboutUserMsgVpnsValidateBeforeCall(count, cursor, opaquePassword, where, select, progressListener, progressRequestListener);
         Type localVarReturnType = new TypeToken<AboutUserMsgVpnsResponse>(){}.getType();
         apiClient.executeAsync(call, localVarReturnType, callback);
         return call;

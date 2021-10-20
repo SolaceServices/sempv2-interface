@@ -1,8 +1,8 @@
 /*
  * SEMP (Solace Element Management Protocol)
- * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any (non-exclusively) of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written|See note 3 Write-Only|Attribute can only be written, not read| Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version|    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object|New attribute values|Object attributes and metadata|Set to default (but see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters \"q1\" and \"q2\" ; with values \"val1\" and \"val2\" respectively /SEMP/v2/monitor/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/monitor/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/monitor/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/monitor/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/monitor/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/monitor/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/monitor/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/monitor/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/monitor/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|For PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT. If the object does not exist, it is created first.    
+ * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any combination of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written.|See note 3 Write-Only|Attribute can only be written, not read, unless the attribute is also opaque|See the documentation for the opaque property Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version| Opaque|Attribute can be set or retrieved in opaque form when the `opaquePassword` query parameter is present|See the `opaquePassword` query parameter documentation    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    In the monitoring API, any non-identifying attribute may not be returned in a GET.  ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object (see note 5)|New attribute values|Object attributes and metadata|Set to default, with certain exceptions (see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters ; \"q1\" and \"q2\" with values \"val1\" and \"val2\" respectively /SEMP/v2/monitor/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/monitor/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/monitor/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/monitor/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/monitor/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/monitor/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/monitor/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/monitor/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/monitor/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ### opaquePassword  Attributes with the opaque property are also write-only and so cannot normally be retrieved in a GET. However, when a password is provided in the `opaquePassword` query parameter, attributes with the opaque property are retrieved in a GET in opaque form, encrypted with this password. The query parameter can also be used on a POST, PATCH, or PUT to set opaque attributes using opaque attribute values retrieved in a GET, so long as:  1. the same password that was used to retrieve the opaque attribute values is provided; and  2. the broker to which the request is being sent has the same major and minor SEMP version as the broker that produced the opaque attribute values.  The password provided in the query parameter must be a minimum of 8 characters and a maximum of 128 characters.  The query parameter can only be used in the configuration API, and only over HTTPS.  ## Help  Visit [our website](https://solace.com) to learn more about Solace.  You can also download the SEMP API specifications by clicking [here](https://solace.com/downloads/).  If you need additional support, please contact us at [support@solace.com](mailto:support@solace.com).  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|On a PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT, except in the following two cases: there is a mutual requires relationship with another non-write-only attribute and both attributes are absent from the request; or the attribute is also opaque and the `opaquePassword` query parameter is provided in the request. 5|On a PUT, if the object does not exist, it is created first.  
  *
- * OpenAPI spec version: 9.4
+ * OpenAPI spec version: 2.17
  * Contact: support@solace.com
  *
  * NOTE: This class is auto generated by the swagger code generator program.
@@ -10,12 +10,7 @@
  * Do not edit the class manually.
  */
 
-
 package com.solace.psg.sempv2.monitor.api;
-
-import com.google.gson.reflect.TypeToken;
-
-import java.io.IOException;
 
 import com.solace.psg.sempv2.apiclient.ApiCallback;
 import com.solace.psg.sempv2.apiclient.ApiClient;
@@ -25,6 +20,12 @@ import com.solace.psg.sempv2.apiclient.Configuration;
 import com.solace.psg.sempv2.apiclient.Pair;
 import com.solace.psg.sempv2.apiclient.ProgressRequestBody;
 import com.solace.psg.sempv2.apiclient.ProgressResponseBody;
+
+import com.google.gson.reflect.TypeToken;
+
+import java.io.IOException;
+
+
 import com.solace.psg.sempv2.monitor.model.MsgVpnAclProfileClientConnectExceptionResponse;
 import com.solace.psg.sempv2.monitor.model.MsgVpnAclProfileClientConnectExceptionsResponse;
 import com.solace.psg.sempv2.monitor.model.MsgVpnAclProfilePublishExceptionResponse;
@@ -78,7 +79,7 @@ public class AclProfileApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileCall(String msgVpnName, String aclProfileName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -100,7 +101,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -120,24 +121,25 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileValidateBeforeCall(String msgVpnName, String aclProfileName, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfile(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfile(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileCall(msgVpnName, aclProfileName, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -218,7 +220,7 @@ public class AclProfileApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileClientConnectExceptionCall(String msgVpnName, String aclProfileName, String clientConnectExceptionAddress, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/clientConnectExceptions/{clientConnectExceptionAddress}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -241,7 +243,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -261,29 +263,29 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileClientConnectExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String clientConnectExceptionAddress, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileClientConnectException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileClientConnectException(Async)");
         }
-        
         // verify the required parameter 'clientConnectExceptionAddress' is set
         if (clientConnectExceptionAddress == null) {
             throw new ApiException("Missing the required parameter 'clientConnectExceptionAddress' when calling getMsgVpnAclProfileClientConnectException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileClientConnectExceptionCall(msgVpnName, aclProfileName, clientConnectExceptionAddress, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -369,7 +371,7 @@ public class AclProfileApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileClientConnectExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/clientConnectExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -397,7 +399,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -417,24 +419,25 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileClientConnectExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileClientConnectExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileClientConnectExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileClientConnectExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -522,12 +525,10 @@ public class AclProfileApi {
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionCall(String msgVpnName, String aclProfileName, String topicSyntax, String publishExceptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/publishExceptions/{topicSyntax},{publishExceptionTopic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -551,7 +552,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -571,35 +572,33 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
-    @Deprecated
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String topicSyntax, String publishExceptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfilePublishException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfilePublishException(Async)");
         }
-        
         // verify the required parameter 'topicSyntax' is set
         if (topicSyntax == null) {
             throw new ApiException("Missing the required parameter 'topicSyntax' when calling getMsgVpnAclProfilePublishException(Async)");
         }
-        
         // verify the required parameter 'publishExceptionTopic' is set
         if (publishExceptionTopic == null) {
             throw new ApiException("Missing the required parameter 'publishExceptionTopic' when calling getMsgVpnAclProfilePublishException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishExceptionCall(msgVpnName, aclProfileName, topicSyntax, publishExceptionTopic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -612,9 +611,7 @@ public class AclProfileApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return MsgVpnAclProfilePublishExceptionResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public MsgVpnAclProfilePublishExceptionResponse getMsgVpnAclProfilePublishException(String msgVpnName, String aclProfileName, String topicSyntax, String publishExceptionTopic, List<String> select) throws ApiException {
         ApiResponse<MsgVpnAclProfilePublishExceptionResponse> resp = getMsgVpnAclProfilePublishExceptionWithHttpInfo(msgVpnName, aclProfileName, topicSyntax, publishExceptionTopic, select);
         return resp.getData();
@@ -630,9 +627,7 @@ public class AclProfileApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;MsgVpnAclProfilePublishExceptionResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public ApiResponse<MsgVpnAclProfilePublishExceptionResponse> getMsgVpnAclProfilePublishExceptionWithHttpInfo(String msgVpnName, String aclProfileName, String topicSyntax, String publishExceptionTopic, List<String> select) throws ApiException {
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishExceptionValidateBeforeCall(msgVpnName, aclProfileName, topicSyntax, publishExceptionTopic, select, null, null);
         Type localVarReturnType = new TypeToken<MsgVpnAclProfilePublishExceptionResponse>(){}.getType();
@@ -650,9 +645,7 @@ public class AclProfileApi {
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionAsync(String msgVpnName, String aclProfileName, String topicSyntax, String publishExceptionTopic, List<String> select, final ApiCallback<MsgVpnAclProfilePublishExceptionResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
@@ -691,12 +684,10 @@ public class AclProfileApi {
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/publishExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -724,7 +715,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -744,25 +735,25 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
-    @Deprecated
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfilePublishExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfilePublishExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -776,9 +767,7 @@ public class AclProfileApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return MsgVpnAclProfilePublishExceptionsResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public MsgVpnAclProfilePublishExceptionsResponse getMsgVpnAclProfilePublishExceptions(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select) throws ApiException {
         ApiResponse<MsgVpnAclProfilePublishExceptionsResponse> resp = getMsgVpnAclProfilePublishExceptionsWithHttpInfo(msgVpnName, aclProfileName, count, cursor, where, select);
         return resp.getData();
@@ -795,9 +784,7 @@ public class AclProfileApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;MsgVpnAclProfilePublishExceptionsResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public ApiResponse<MsgVpnAclProfilePublishExceptionsResponse> getMsgVpnAclProfilePublishExceptionsWithHttpInfo(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select) throws ApiException {
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishExceptionsValidateBeforeCall(msgVpnName, aclProfileName, count, cursor, where, select, null, null);
         Type localVarReturnType = new TypeToken<MsgVpnAclProfilePublishExceptionsResponse>(){}.getType();
@@ -816,9 +803,7 @@ public class AclProfileApi {
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishExceptionsAsync(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ApiCallback<MsgVpnAclProfilePublishExceptionsResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
@@ -859,7 +844,7 @@ public class AclProfileApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishTopicExceptionCall(String msgVpnName, String aclProfileName, String publishTopicExceptionSyntax, String publishTopicException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/publishTopicExceptions/{publishTopicExceptionSyntax},{publishTopicException}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -883,7 +868,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -903,34 +888,33 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfilePublishTopicExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String publishTopicExceptionSyntax, String publishTopicException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfilePublishTopicException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfilePublishTopicException(Async)");
         }
-        
         // verify the required parameter 'publishTopicExceptionSyntax' is set
         if (publishTopicExceptionSyntax == null) {
             throw new ApiException("Missing the required parameter 'publishTopicExceptionSyntax' when calling getMsgVpnAclProfilePublishTopicException(Async)");
         }
-        
         // verify the required parameter 'publishTopicException' is set
         if (publishTopicException == null) {
             throw new ApiException("Missing the required parameter 'publishTopicException' when calling getMsgVpnAclProfilePublishTopicException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishTopicExceptionCall(msgVpnName, aclProfileName, publishTopicExceptionSyntax, publishTopicException, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1019,7 +1003,7 @@ public class AclProfileApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfilePublishTopicExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/publishTopicExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1047,7 +1031,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1067,24 +1051,25 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfilePublishTopicExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfilePublishTopicExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfilePublishTopicExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfilePublishTopicExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1172,12 +1157,10 @@ public class AclProfileApi {
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionCall(String msgVpnName, String aclProfileName, String topicSyntax, String subscribeExceptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeExceptions/{topicSyntax},{subscribeExceptionTopic}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1201,7 +1184,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1221,35 +1204,33 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
-    @Deprecated
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String topicSyntax, String subscribeExceptionTopic, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeException(Async)");
         }
-        
         // verify the required parameter 'topicSyntax' is set
         if (topicSyntax == null) {
             throw new ApiException("Missing the required parameter 'topicSyntax' when calling getMsgVpnAclProfileSubscribeException(Async)");
         }
-        
         // verify the required parameter 'subscribeExceptionTopic' is set
         if (subscribeExceptionTopic == null) {
             throw new ApiException("Missing the required parameter 'subscribeExceptionTopic' when calling getMsgVpnAclProfileSubscribeException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeExceptionCall(msgVpnName, aclProfileName, topicSyntax, subscribeExceptionTopic, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1262,9 +1243,7 @@ public class AclProfileApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return MsgVpnAclProfileSubscribeExceptionResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public MsgVpnAclProfileSubscribeExceptionResponse getMsgVpnAclProfileSubscribeException(String msgVpnName, String aclProfileName, String topicSyntax, String subscribeExceptionTopic, List<String> select) throws ApiException {
         ApiResponse<MsgVpnAclProfileSubscribeExceptionResponse> resp = getMsgVpnAclProfileSubscribeExceptionWithHttpInfo(msgVpnName, aclProfileName, topicSyntax, subscribeExceptionTopic, select);
         return resp.getData();
@@ -1280,9 +1259,7 @@ public class AclProfileApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;MsgVpnAclProfileSubscribeExceptionResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public ApiResponse<MsgVpnAclProfileSubscribeExceptionResponse> getMsgVpnAclProfileSubscribeExceptionWithHttpInfo(String msgVpnName, String aclProfileName, String topicSyntax, String subscribeExceptionTopic, List<String> select) throws ApiException {
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeExceptionValidateBeforeCall(msgVpnName, aclProfileName, topicSyntax, subscribeExceptionTopic, select, null, null);
         Type localVarReturnType = new TypeToken<MsgVpnAclProfileSubscribeExceptionResponse>(){}.getType();
@@ -1300,9 +1277,7 @@ public class AclProfileApi {
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionAsync(String msgVpnName, String aclProfileName, String topicSyntax, String subscribeExceptionTopic, List<String> select, final ApiCallback<MsgVpnAclProfileSubscribeExceptionResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
@@ -1341,12 +1316,10 @@ public class AclProfileApi {
      * @param progressRequestListener Progress request listener
      * @return Call to execute
      * @throws ApiException If fail to serialize the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1374,7 +1347,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1394,25 +1367,25 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
-    @Deprecated
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1426,9 +1399,7 @@ public class AclProfileApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return MsgVpnAclProfileSubscribeExceptionsResponse
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public MsgVpnAclProfileSubscribeExceptionsResponse getMsgVpnAclProfileSubscribeExceptions(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select) throws ApiException {
         ApiResponse<MsgVpnAclProfileSubscribeExceptionsResponse> resp = getMsgVpnAclProfileSubscribeExceptionsWithHttpInfo(msgVpnName, aclProfileName, count, cursor, where, select);
         return resp.getData();
@@ -1445,9 +1416,7 @@ public class AclProfileApi {
      * @param select Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. See the documentation for the &#x60;select&#x60; parameter. (optional)
      * @return ApiResponse&lt;MsgVpnAclProfileSubscribeExceptionsResponse&gt;
      * @throws ApiException If fail to call the API, e.g. server error or cannot deserialize the response body
-     * @deprecated
      */
-    @Deprecated
     public ApiResponse<MsgVpnAclProfileSubscribeExceptionsResponse> getMsgVpnAclProfileSubscribeExceptionsWithHttpInfo(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select) throws ApiException {
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeExceptionsValidateBeforeCall(msgVpnName, aclProfileName, count, cursor, where, select, null, null);
         Type localVarReturnType = new TypeToken<MsgVpnAclProfileSubscribeExceptionsResponse>(){}.getType();
@@ -1466,9 +1435,7 @@ public class AclProfileApi {
      * @param callback The callback to be executed when the API call finishes
      * @return The request call
      * @throws ApiException If fail to process the API call, e.g. serializing the request body object
-     * @deprecated
      */
-    @Deprecated
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeExceptionsAsync(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ApiCallback<MsgVpnAclProfileSubscribeExceptionsResponse> callback) throws ApiException {
 
         ProgressResponseBody.ProgressListener progressListener = null;
@@ -1509,7 +1476,7 @@ public class AclProfileApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeShareNameExceptionCall(String msgVpnName, String aclProfileName, String subscribeShareNameExceptionSyntax, String subscribeShareNameException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeShareNameExceptions/{subscribeShareNameExceptionSyntax},{subscribeShareNameException}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1533,7 +1500,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1553,34 +1520,33 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeShareNameExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String subscribeShareNameExceptionSyntax, String subscribeShareNameException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeShareNameException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeShareNameException(Async)");
         }
-        
         // verify the required parameter 'subscribeShareNameExceptionSyntax' is set
         if (subscribeShareNameExceptionSyntax == null) {
             throw new ApiException("Missing the required parameter 'subscribeShareNameExceptionSyntax' when calling getMsgVpnAclProfileSubscribeShareNameException(Async)");
         }
-        
         // verify the required parameter 'subscribeShareNameException' is set
         if (subscribeShareNameException == null) {
             throw new ApiException("Missing the required parameter 'subscribeShareNameException' when calling getMsgVpnAclProfileSubscribeShareNameException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeShareNameExceptionCall(msgVpnName, aclProfileName, subscribeShareNameExceptionSyntax, subscribeShareNameException, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1669,7 +1635,7 @@ public class AclProfileApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeShareNameExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeShareNameExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1697,7 +1663,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1717,24 +1683,25 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeShareNameExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeShareNameExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeShareNameExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeShareNameExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1825,7 +1792,7 @@ public class AclProfileApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeTopicExceptionCall(String msgVpnName, String aclProfileName, String subscribeTopicExceptionSyntax, String subscribeTopicException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeTopicExceptions/{subscribeTopicExceptionSyntax},{subscribeTopicException}"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -1849,7 +1816,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -1869,34 +1836,33 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeTopicExceptionValidateBeforeCall(String msgVpnName, String aclProfileName, String subscribeTopicExceptionSyntax, String subscribeTopicException, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeTopicException(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeTopicException(Async)");
         }
-        
         // verify the required parameter 'subscribeTopicExceptionSyntax' is set
         if (subscribeTopicExceptionSyntax == null) {
             throw new ApiException("Missing the required parameter 'subscribeTopicExceptionSyntax' when calling getMsgVpnAclProfileSubscribeTopicException(Async)");
         }
-        
         // verify the required parameter 'subscribeTopicException' is set
         if (subscribeTopicException == null) {
             throw new ApiException("Missing the required parameter 'subscribeTopicException' when calling getMsgVpnAclProfileSubscribeTopicException(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeTopicExceptionCall(msgVpnName, aclProfileName, subscribeTopicExceptionSyntax, subscribeTopicException, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -1985,7 +1951,7 @@ public class AclProfileApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeTopicExceptionsCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles/{aclProfileName}/subscribeTopicExceptions"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()))
@@ -2013,7 +1979,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -2033,24 +1999,25 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfileSubscribeTopicExceptionsValidateBeforeCall(String msgVpnName, String aclProfileName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfileSubscribeTopicExceptions(Async)");
         }
-        
         // verify the required parameter 'aclProfileName' is set
         if (aclProfileName == null) {
             throw new ApiException("Missing the required parameter 'aclProfileName' when calling getMsgVpnAclProfileSubscribeTopicExceptions(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfileSubscribeTopicExceptionsCall(msgVpnName, aclProfileName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**
@@ -2141,7 +2108,7 @@ public class AclProfileApi {
      */
     public com.squareup.okhttp.Call getMsgVpnAclProfilesCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
         Object localVarPostBody = null;
-
+        
         // create path and map variables
         String localVarPath = "/msgVpns/{msgVpnName}/aclProfiles"
             .replaceAll("\\{" + "msgVpnName" + "\\}", apiClient.escapeString(msgVpnName.toString()));
@@ -2168,7 +2135,7 @@ public class AclProfileApi {
         if (localVarAccept != null) localVarHeaderParams.put("Accept", localVarAccept);
 
         final String[] localVarContentTypes = {
-            "application/json"
+            
         };
         final String localVarContentType = apiClient.selectHeaderContentType(localVarContentTypes);
         localVarHeaderParams.put("Content-Type", localVarContentType);
@@ -2188,19 +2155,21 @@ public class AclProfileApi {
         String[] localVarAuthNames = new String[] { "basicAuth" };
         return apiClient.buildCall(localVarPath, "GET", localVarQueryParams, localVarCollectionQueryParams, localVarPostBody, localVarHeaderParams, localVarFormParams, localVarAuthNames, progressRequestListener);
     }
-
+    
     @SuppressWarnings("rawtypes")
     private com.squareup.okhttp.Call getMsgVpnAclProfilesValidateBeforeCall(String msgVpnName, Integer count, String cursor, List<String> where, List<String> select, final ProgressResponseBody.ProgressListener progressListener, final ProgressRequestBody.ProgressRequestListener progressRequestListener) throws ApiException {
-        
         // verify the required parameter 'msgVpnName' is set
         if (msgVpnName == null) {
             throw new ApiException("Missing the required parameter 'msgVpnName' when calling getMsgVpnAclProfiles(Async)");
         }
         
-
         com.squareup.okhttp.Call call = getMsgVpnAclProfilesCall(msgVpnName, count, cursor, where, select, progressListener, progressRequestListener);
         return call;
 
+        
+        
+        
+        
     }
 
     /**

@@ -1,15 +1,14 @@
 /*
  * SEMP (Solace Element Management Protocol)
- * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any (non-exclusively) of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written|See note 3 Write-Only|Attribute can only be written, not read| Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version|    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object|New attribute values|Object attributes and metadata|Set to default (but see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters \"q1\" and \"q2\" ; with values \"val1\" and \"val2\" respectively /SEMP/v2/monitor/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/monitor/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/monitor/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/monitor/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/monitor/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/monitor/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/monitor/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/monitor/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/monitor/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|For PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT. If the object does not exist, it is created first.    
+ * SEMP (starting in `v2`, see note 1) is a RESTful API for configuring, monitoring, and administering a Solace PubSub+ broker.  SEMP uses URIs to address manageable **resources** of the Solace PubSub+ broker. Resources are individual **objects**, **collections** of objects, or (exclusively in the action API) **actions**. This document applies to the following API:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Monitoring|/SEMP/v2/monitor|Querying operational parameters|See note 2    The following APIs are also available:   API|Base Path|Purpose|Comments :---|:---|:---|:--- Action|/SEMP/v2/action|Performing actions|See note 2 Configuration|/SEMP/v2/config|Reading and writing config state|See note 2    Resources are always nouns, with individual objects being singular and collections being plural.  Objects within a collection are identified by an `obj-id`, which follows the collection name with the form `collection-name/obj-id`.  Actions within an object are identified by an `action-id`, which follows the object name with the form `obj-id/action-id`.  Some examples:  ``` /SEMP/v2/config/msgVpns                        ; MsgVpn collection /SEMP/v2/config/msgVpns/a                      ; MsgVpn object named \"a\" /SEMP/v2/config/msgVpns/a/queues               ; Queue collection in MsgVpn \"a\" /SEMP/v2/config/msgVpns/a/queues/b             ; Queue object named \"b\" in MsgVpn \"a\" /SEMP/v2/action/msgVpns/a/queues/b/startReplay ; Action that starts a replay on Queue \"b\" in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients             ; Client collection in MsgVpn \"a\" /SEMP/v2/monitor/msgVpns/a/clients/c           ; Client object named \"c\" in MsgVpn \"a\" ```  ## Collection Resources  Collections are unordered lists of objects (unless described as otherwise), and are described by JSON arrays. Each item in the array represents an object in the same manner as the individual object would normally be represented. In the configuration API, the creation of a new object is done through its collection resource.  ## Object and Action Resources  Objects are composed of attributes, actions, collections, and other objects. They are described by JSON objects as name/value pairs. The collections and actions of an object are not contained directly in the object's JSON content; rather the content includes an attribute containing a URI which points to the collections and actions. These contained resources must be managed through this URI. At a minimum, every object has one or more identifying attributes, and its own `uri` attribute which contains the URI pointing to itself.  Actions are also composed of attributes, and are described by JSON objects as name/value pairs. Unlike objects, however, they are not members of a collection and cannot be retrieved, only performed. Actions only exist in the action API.  Attributes in an object or action may have any combination of the following properties:   Property|Meaning|Comments :---|:---|:--- Identifying|Attribute is involved in unique identification of the object, and appears in its URI| Required|Attribute must be provided in the request| Read-Only|Attribute can only be read, not written.|See note 3 Write-Only|Attribute can only be written, not read, unless the attribute is also opaque|See the documentation for the opaque property Requires-Disable|Attribute can only be changed when object is disabled| Deprecated|Attribute is deprecated, and will disappear in the next SEMP version| Opaque|Attribute can be set or retrieved in opaque form when the `opaquePassword` query parameter is present|See the `opaquePassword` query parameter documentation    In some requests, certain attributes may only be provided in certain combinations with other attributes:   Relationship|Meaning :---|:--- Requires|Attribute may only be changed by a request if a particular attribute or combination of attributes is also provided in the request Conflicts|Attribute may only be provided in a request if a particular attribute or combination of attributes is not also provided in the request    In the monitoring API, any non-identifying attribute may not be returned in a GET.  ## HTTP Methods  The following HTTP methods manipulate resources in accordance with these general principles. Note that some methods are only used in certain APIs:   Method|Resource|Meaning|Request Body|Response Body|Missing Request Attributes :---|:---|:---|:---|:---|:--- POST|Collection|Create object|Initial attribute values|Object attributes and metadata|Set to default PUT|Object|Create or replace object (see note 5)|New attribute values|Object attributes and metadata|Set to default, with certain exceptions (see note 4) PUT|Action|Performs action|Action arguments|Action metadata|N/A PATCH|Object|Update object|New attribute values|Object attributes and metadata|unchanged DELETE|Object|Delete object|Empty|Object metadata|N/A GET|Object|Get object|Empty|Object attributes and metadata|N/A GET|Collection|Get collection|Empty|Object attributes and collection metadata|N/A    ## Common Query Parameters  The following are some common query parameters that are supported by many method/URI combinations. Individual URIs may document additional parameters. Note that multiple query parameters can be used together in a single URI, separated by the ampersand character. For example:  ``` ; Request for the MsgVpns collection using two hypothetical query parameters ; \"q1\" and \"q2\" with values \"val1\" and \"val2\" respectively /SEMP/v2/monitor/msgVpns?q1=val1&q2=val2 ```  ### select  Include in the response only selected attributes of the object, or exclude from the response selected attributes of the object. Use this query parameter to limit the size of the returned data for each returned object, return only those fields that are desired, or exclude fields that are not desired.  The value of `select` is a comma-separated list of attribute names. If the list contains attribute names that are not prefaced by `-`, only those attributes are included in the response. If the list contains attribute names that are prefaced by `-`, those attributes are excluded from the response. If the list contains both types, then the difference of the first set of attributes and the second set of attributes is returned. If the list is empty (i.e. `select=`), no attributes are returned.  All attributes that are prefaced by `-` must follow all attributes that are not prefaced by `-`. In addition, each attribute name in the list must match at least one attribute in the object.  Names may include the `*` wildcard (zero or more characters). Nested attribute names are supported using periods (e.g. `parentName.childName`).  Some examples:  ``` ; List of all MsgVpn names /SEMP/v2/monitor/msgVpns?select=msgVpnName ; List of all MsgVpn and their attributes except for their names /SEMP/v2/monitor/msgVpns?select=-msgVpnName ; Authentication attributes of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance?select=authentication* ; All attributes of MsgVpn \"finance\" except for authentication attributes /SEMP/v2/monitor/msgVpns/finance?select=-authentication* ; Access related attributes of Queue \"orderQ\" of MsgVpn \"finance\" /SEMP/v2/monitor/msgVpns/finance/queues/orderQ?select=owner,permission ```  ### where  Include in the response only objects where certain conditions are true. Use this query parameter to limit which objects are returned to those whose attribute values meet the given conditions.  The value of `where` is a comma-separated list of expressions. All expressions must be true for the object to be included in the response. Each expression takes the form:  ``` expression  = attribute-name OP value OP          = '==' | '!=' | '&lt;' | '&gt;' | '&lt;=' | '&gt;=' ```  `value` may be a number, string, `true`, or `false`, as appropriate for the type of `attribute-name`. Greater-than and less-than comparisons only work for numbers. A `*` in a string `value` is interpreted as a wildcard (zero or more characters). Some examples:  ``` ; Only enabled MsgVpns /SEMP/v2/monitor/msgVpns?where=enabled==true ; Only MsgVpns using basic non-LDAP authentication /SEMP/v2/monitor/msgVpns?where=authenticationBasicEnabled==true,authenticationBasicType!=ldap ; Only MsgVpns that allow more than 100 client connections /SEMP/v2/monitor/msgVpns?where=maxConnectionCount>100 ; Only MsgVpns with msgVpnName starting with \"B\": /SEMP/v2/monitor/msgVpns?where=msgVpnName==B* ```  ### count  Limit the count of objects in the response. This can be useful to limit the size of the response for large collections. The minimum value for `count` is `1` and the default is `10`. There is also a per-collection maximum value to limit request handling time. For example:  ``` ; Up to 25 MsgVpns /SEMP/v2/monitor/msgVpns?count=25 ```  ### cursor  The cursor, or position, for the next page of objects. Cursors are opaque data that should not be created or interpreted by SEMP clients, and should only be used as described below.  When a request is made for a collection and there may be additional objects available for retrieval that are not included in the initial response, the response will include a `cursorQuery` field containing a cursor. The value of this field can be specified in the `cursor` query parameter of a subsequent request to retrieve the next page of objects. For convenience, an appropriate URI is constructed automatically by the broker and included in the `nextPageUri` field of the response. This URI can be used directly to retrieve the next page of objects.  ### opaquePassword  Attributes with the opaque property are also write-only and so cannot normally be retrieved in a GET. However, when a password is provided in the `opaquePassword` query parameter, attributes with the opaque property are retrieved in a GET in opaque form, encrypted with this password. The query parameter can also be used on a POST, PATCH, or PUT to set opaque attributes using opaque attribute values retrieved in a GET, so long as:  1. the same password that was used to retrieve the opaque attribute values is provided; and  2. the broker to which the request is being sent has the same major and minor SEMP version as the broker that produced the opaque attribute values.  The password provided in the query parameter must be a minimum of 8 characters and a maximum of 128 characters.  The query parameter can only be used in the configuration API, and only over HTTPS.  ## Help  Visit [our website](https://solace.com) to learn more about Solace.  You can also download the SEMP API specifications by clicking [here](https://solace.com/downloads/).  If you need additional support, please contact us at [support@solace.com](mailto:support@solace.com).  ## Notes  Note|Description :---:|:--- 1|This specification defines SEMP starting in \"v2\", and not the original SEMP \"v1\" interface. Request and response formats between \"v1\" and \"v2\" are entirely incompatible, although both protocols share a common port configuration on the Solace PubSub+ broker. They are differentiated by the initial portion of the URI path, one of either \"/SEMP/\" or \"/SEMP/v2/\" 2|This API is partially implemented. Only a subset of all objects are available. 3|Read-only attributes may appear in POST and PUT/PATCH requests. However, if a read-only attribute is not marked as identifying, it will be ignored during a PUT/PATCH. 4|On a PUT, if the SEMP user is not authorized to modify the attribute, its value is left unchanged rather than set to default. In addition, the values of write-only attributes are not set to their defaults on a PUT, except in the following two cases: there is a mutual requires relationship with another non-write-only attribute and both attributes are absent from the request; or the attribute is also opaque and the `opaquePassword` query parameter is provided in the request. 5|On a PUT, if the object does not exist, it is created first.  
  *
- * OpenAPI spec version: 9.4
+ * OpenAPI spec version: 2.17
  * Contact: support@solace.com
  *
  * NOTE: This class is auto generated by the swagger code generator program.
  * https://github.com/swagger-api/swagger-codegen.git
  * Do not edit the class manually.
  */
-
 
 package com.solace.psg.sempv2.monitor.model;
 
@@ -20,18 +19,17 @@ import com.google.gson.annotations.JsonAdapter;
 import com.google.gson.annotations.SerializedName;
 import com.google.gson.stream.JsonReader;
 import com.google.gson.stream.JsonWriter;
-import io.swagger.annotations.ApiModel;
-import io.swagger.annotations.ApiModelProperty;
 import com.solace.psg.sempv2.monitor.model.EventThreshold;
 import com.solace.psg.sempv2.monitor.model.EventThresholdByValue;
 import com.solace.psg.sempv2.monitor.model.MsgVpnCounter;
 import com.solace.psg.sempv2.monitor.model.MsgVpnRate;
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.io.IOException;
-
 /**
  * MsgVpn
  */
-@javax.annotation.Generated(value = "io.swagger.codegen.languages.JavaClientCodegen", date = "2020-03-13T23:07:13.589Z")
+
+@javax.annotation.Generated(value = "io.swagger.codegen.v3.generators.java.JavaClientCodegen", date = "2021-04-29T21:57:21.016551900+01:00[Europe/London]")
 public class MsgVpn {
   @SerializedName("alias")
   private String alias = null;
@@ -51,11 +49,8 @@ public class MsgVpn {
   @JsonAdapter(AuthenticationBasicTypeEnum.Adapter.class)
   public enum AuthenticationBasicTypeEnum {
     INTERNAL("internal"),
-    
     LDAP("ldap"),
-    
     RADIUS("radius"),
-    
     NONE("none");
 
     private String value;
@@ -63,7 +58,6 @@ public class MsgVpn {
     AuthenticationBasicTypeEnum(String value) {
       this.value = value;
     }
-
     public String getValue() {
       return value;
     }
@@ -72,7 +66,6 @@ public class MsgVpn {
     public String toString() {
       return String.valueOf(value);
     }
-
     public static AuthenticationBasicTypeEnum fromValue(String text) {
       for (AuthenticationBasicTypeEnum b : AuthenticationBasicTypeEnum.values()) {
         if (String.valueOf(b.value).equals(text)) {
@@ -81,7 +74,6 @@ public class MsgVpn {
       }
       return null;
     }
-
     public static class Adapter extends TypeAdapter<AuthenticationBasicTypeEnum> {
       @Override
       public void write(final JsonWriter jsonWriter, final AuthenticationBasicTypeEnum enumeration) throws IOException {
@@ -90,13 +82,11 @@ public class MsgVpn {
 
       @Override
       public AuthenticationBasicTypeEnum read(final JsonReader jsonReader) throws IOException {
-        String value = jsonReader.nextString();
+        Object value = jsonReader.nextString();
         return AuthenticationBasicTypeEnum.fromValue(String.valueOf(value));
       }
     }
-  }
-
-  @SerializedName("authenticationBasicType")
+  }  @SerializedName("authenticationBasicType")
   private AuthenticationBasicTypeEnum authenticationBasicType = null;
 
   @SerializedName("authenticationClientCertAllowApiProvidedUsernameEnabled")
@@ -114,9 +104,7 @@ public class MsgVpn {
   @JsonAdapter(AuthenticationClientCertRevocationCheckModeEnum.Adapter.class)
   public enum AuthenticationClientCertRevocationCheckModeEnum {
     ALL("allow-all"),
-    
     UNKNOWN("allow-unknown"),
-    
     VALID("allow-valid");
 
     private String value;
@@ -124,7 +112,6 @@ public class MsgVpn {
     AuthenticationClientCertRevocationCheckModeEnum(String value) {
       this.value = value;
     }
-
     public String getValue() {
       return value;
     }
@@ -133,7 +120,6 @@ public class MsgVpn {
     public String toString() {
       return String.valueOf(value);
     }
-
     public static AuthenticationClientCertRevocationCheckModeEnum fromValue(String text) {
       for (AuthenticationClientCertRevocationCheckModeEnum b : AuthenticationClientCertRevocationCheckModeEnum.values()) {
         if (String.valueOf(b.value).equals(text)) {
@@ -142,7 +128,6 @@ public class MsgVpn {
       }
       return null;
     }
-
     public static class Adapter extends TypeAdapter<AuthenticationClientCertRevocationCheckModeEnum> {
       @Override
       public void write(final JsonWriter jsonWriter, final AuthenticationClientCertRevocationCheckModeEnum enumeration) throws IOException {
@@ -151,22 +136,19 @@ public class MsgVpn {
 
       @Override
       public AuthenticationClientCertRevocationCheckModeEnum read(final JsonReader jsonReader) throws IOException {
-        String value = jsonReader.nextString();
+        Object value = jsonReader.nextString();
         return AuthenticationClientCertRevocationCheckModeEnum.fromValue(String.valueOf(value));
       }
     }
-  }
-
-  @SerializedName("authenticationClientCertRevocationCheckMode")
+  }  @SerializedName("authenticationClientCertRevocationCheckMode")
   private AuthenticationClientCertRevocationCheckModeEnum authenticationClientCertRevocationCheckMode = null;
 
   /**
-   * The field from the client certificate to use as the client username. The allowed values and their meaning are:  &lt;pre&gt; \&quot;common-name\&quot; - The username is extracted from the certificate&#39;s Common Name. \&quot;subject-alternate-name-msupn\&quot; - The username is extracted from the certificate&#39;s Other Name type of the Subject Alternative Name and must have the msUPN signature. &lt;/pre&gt; 
+   * The field from the client certificate to use as the client username. The allowed values and their meaning are:  &lt;pre&gt; \&quot;common-name\&quot; - The username is extracted from the certificate&#x27;s Common Name. \&quot;subject-alternate-name-msupn\&quot; - The username is extracted from the certificate&#x27;s Other Name type of the Subject Alternative Name and must have the msUPN signature. &lt;/pre&gt; 
    */
   @JsonAdapter(AuthenticationClientCertUsernameSourceEnum.Adapter.class)
   public enum AuthenticationClientCertUsernameSourceEnum {
     COMMON_NAME("common-name"),
-    
     SUBJECT_ALTERNATE_NAME_MSUPN("subject-alternate-name-msupn");
 
     private String value;
@@ -174,7 +156,6 @@ public class MsgVpn {
     AuthenticationClientCertUsernameSourceEnum(String value) {
       this.value = value;
     }
-
     public String getValue() {
       return value;
     }
@@ -183,7 +164,6 @@ public class MsgVpn {
     public String toString() {
       return String.valueOf(value);
     }
-
     public static AuthenticationClientCertUsernameSourceEnum fromValue(String text) {
       for (AuthenticationClientCertUsernameSourceEnum b : AuthenticationClientCertUsernameSourceEnum.values()) {
         if (String.valueOf(b.value).equals(text)) {
@@ -192,7 +172,6 @@ public class MsgVpn {
       }
       return null;
     }
-
     public static class Adapter extends TypeAdapter<AuthenticationClientCertUsernameSourceEnum> {
       @Override
       public void write(final JsonWriter jsonWriter, final AuthenticationClientCertUsernameSourceEnum enumeration) throws IOException {
@@ -201,13 +180,11 @@ public class MsgVpn {
 
       @Override
       public AuthenticationClientCertUsernameSourceEnum read(final JsonReader jsonReader) throws IOException {
-        String value = jsonReader.nextString();
+        Object value = jsonReader.nextString();
         return AuthenticationClientCertUsernameSourceEnum.fromValue(String.valueOf(value));
       }
     }
-  }
-
-  @SerializedName("authenticationClientCertUsernameSource")
+  }  @SerializedName("authenticationClientCertUsernameSource")
   private AuthenticationClientCertUsernameSourceEnum authenticationClientCertUsernameSource = null;
 
   @SerializedName("authenticationClientCertValidateDateEnabled")
@@ -240,7 +217,6 @@ public class MsgVpn {
   @JsonAdapter(AuthorizationTypeEnum.Adapter.class)
   public enum AuthorizationTypeEnum {
     LDAP("ldap"),
-    
     INTERNAL("internal");
 
     private String value;
@@ -248,7 +224,6 @@ public class MsgVpn {
     AuthorizationTypeEnum(String value) {
       this.value = value;
     }
-
     public String getValue() {
       return value;
     }
@@ -257,7 +232,6 @@ public class MsgVpn {
     public String toString() {
       return String.valueOf(value);
     }
-
     public static AuthorizationTypeEnum fromValue(String text) {
       for (AuthorizationTypeEnum b : AuthorizationTypeEnum.values()) {
         if (String.valueOf(b.value).equals(text)) {
@@ -266,7 +240,6 @@ public class MsgVpn {
       }
       return null;
     }
-
     public static class Adapter extends TypeAdapter<AuthorizationTypeEnum> {
       @Override
       public void write(final JsonWriter jsonWriter, final AuthorizationTypeEnum enumeration) throws IOException {
@@ -275,13 +248,11 @@ public class MsgVpn {
 
       @Override
       public AuthorizationTypeEnum read(final JsonReader jsonReader) throws IOException {
-        String value = jsonReader.nextString();
+        Object value = jsonReader.nextString();
         return AuthorizationTypeEnum.fromValue(String.valueOf(value));
       }
     }
-  }
-
-  @SerializedName("authorizationType")
+  }  @SerializedName("authorizationType")
   private AuthorizationTypeEnum authorizationType = null;
 
   @SerializedName("averageRxByteRate")
@@ -413,13 +384,9 @@ public class MsgVpn {
   @JsonAdapter(EventPublishSubscriptionModeEnum.Adapter.class)
   public enum EventPublishSubscriptionModeEnum {
     OFF("off"),
-    
     ON_WITH_FORMAT_V1("on-with-format-v1"),
-    
     ON_WITH_NO_UNSUBSCRIBE_EVENTS_ON_DISCONNECT_FORMAT_V1("on-with-no-unsubscribe-events-on-disconnect-format-v1"),
-    
     ON_WITH_FORMAT_V2("on-with-format-v2"),
-    
     ON_WITH_NO_UNSUBSCRIBE_EVENTS_ON_DISCONNECT_FORMAT_V2("on-with-no-unsubscribe-events-on-disconnect-format-v2");
 
     private String value;
@@ -427,7 +394,6 @@ public class MsgVpn {
     EventPublishSubscriptionModeEnum(String value) {
       this.value = value;
     }
-
     public String getValue() {
       return value;
     }
@@ -436,7 +402,6 @@ public class MsgVpn {
     public String toString() {
       return String.valueOf(value);
     }
-
     public static EventPublishSubscriptionModeEnum fromValue(String text) {
       for (EventPublishSubscriptionModeEnum b : EventPublishSubscriptionModeEnum.values()) {
         if (String.valueOf(b.value).equals(text)) {
@@ -445,7 +410,6 @@ public class MsgVpn {
       }
       return null;
     }
-
     public static class Adapter extends TypeAdapter<EventPublishSubscriptionModeEnum> {
       @Override
       public void write(final JsonWriter jsonWriter, final EventPublishSubscriptionModeEnum enumeration) throws IOException {
@@ -454,13 +418,11 @@ public class MsgVpn {
 
       @Override
       public EventPublishSubscriptionModeEnum read(final JsonReader jsonReader) throws IOException {
-        String value = jsonReader.nextString();
+        Object value = jsonReader.nextString();
         return EventPublishSubscriptionModeEnum.fromValue(String.valueOf(value));
       }
     }
-  }
-
-  @SerializedName("eventPublishSubscriptionMode")
+  }  @SerializedName("eventPublishSubscriptionMode")
   private EventPublishSubscriptionModeEnum eventPublishSubscriptionMode = null;
 
   @SerializedName("eventPublishTopicFormatMqttEnabled")
@@ -580,56 +542,6 @@ public class MsgVpn {
   @SerializedName("msgVpnName")
   private String msgVpnName = null;
 
-  /**
-   * IP version to use if DNS lookup contains both an IPv4 and IPv6 address. The allowed values and their meaning are:  &lt;pre&gt; \&quot;ipv4\&quot; - Use IPv4 address when DNS lookup contains both an IPv4 and IPv6 address. \&quot;ipv6\&quot; - Use IPv6 address when DNS lookup contains both an IPv4 and IPv6 address. &lt;/pre&gt; 
-   */
-  @JsonAdapter(PreferIpVersionEnum.Adapter.class)
-  public enum PreferIpVersionEnum {
-    IPV4("ipv4"),
-    
-    IPV6("ipv6");
-
-    private String value;
-
-    PreferIpVersionEnum(String value) {
-      this.value = value;
-    }
-
-    public String getValue() {
-      return value;
-    }
-
-    @Override
-    public String toString() {
-      return String.valueOf(value);
-    }
-
-    public static PreferIpVersionEnum fromValue(String text) {
-      for (PreferIpVersionEnum b : PreferIpVersionEnum.values()) {
-        if (String.valueOf(b.value).equals(text)) {
-          return b;
-        }
-      }
-      return null;
-    }
-
-    public static class Adapter extends TypeAdapter<PreferIpVersionEnum> {
-      @Override
-      public void write(final JsonWriter jsonWriter, final PreferIpVersionEnum enumeration) throws IOException {
-        jsonWriter.value(enumeration.getValue());
-      }
-
-      @Override
-      public PreferIpVersionEnum read(final JsonReader jsonReader) throws IOException {
-        String value = jsonReader.nextString();
-        return PreferIpVersionEnum.fromValue(String.valueOf(value));
-      }
-    }
-  }
-
-  @SerializedName("preferIpVersion")
-  private PreferIpVersionEnum preferIpVersion = null;
-
   @SerializedName("rate")
   private MsgVpnRate rate = null;
 
@@ -681,7 +593,6 @@ public class MsgVpn {
   @JsonAdapter(ReplicationBridgeAuthenticationSchemeEnum.Adapter.class)
   public enum ReplicationBridgeAuthenticationSchemeEnum {
     BASIC("basic"),
-    
     CLIENT_CERTIFICATE("client-certificate");
 
     private String value;
@@ -689,7 +600,6 @@ public class MsgVpn {
     ReplicationBridgeAuthenticationSchemeEnum(String value) {
       this.value = value;
     }
-
     public String getValue() {
       return value;
     }
@@ -698,7 +608,6 @@ public class MsgVpn {
     public String toString() {
       return String.valueOf(value);
     }
-
     public static ReplicationBridgeAuthenticationSchemeEnum fromValue(String text) {
       for (ReplicationBridgeAuthenticationSchemeEnum b : ReplicationBridgeAuthenticationSchemeEnum.values()) {
         if (String.valueOf(b.value).equals(text)) {
@@ -707,7 +616,6 @@ public class MsgVpn {
       }
       return null;
     }
-
     public static class Adapter extends TypeAdapter<ReplicationBridgeAuthenticationSchemeEnum> {
       @Override
       public void write(final JsonWriter jsonWriter, final ReplicationBridgeAuthenticationSchemeEnum enumeration) throws IOException {
@@ -716,13 +624,11 @@ public class MsgVpn {
 
       @Override
       public ReplicationBridgeAuthenticationSchemeEnum read(final JsonReader jsonReader) throws IOException {
-        String value = jsonReader.nextString();
+        Object value = jsonReader.nextString();
         return ReplicationBridgeAuthenticationSchemeEnum.fromValue(String.valueOf(value));
       }
     }
-  }
-
-  @SerializedName("replicationBridgeAuthenticationScheme")
+  }  @SerializedName("replicationBridgeAuthenticationScheme")
   private ReplicationBridgeAuthenticationSchemeEnum replicationBridgeAuthenticationScheme = null;
 
   @SerializedName("replicationBridgeBoundToQueue")
@@ -776,7 +682,6 @@ public class MsgVpn {
   @JsonAdapter(ReplicationRoleEnum.Adapter.class)
   public enum ReplicationRoleEnum {
     ACTIVE("active"),
-    
     STANDBY("standby");
 
     private String value;
@@ -784,7 +689,6 @@ public class MsgVpn {
     ReplicationRoleEnum(String value) {
       this.value = value;
     }
-
     public String getValue() {
       return value;
     }
@@ -793,7 +697,6 @@ public class MsgVpn {
     public String toString() {
       return String.valueOf(value);
     }
-
     public static ReplicationRoleEnum fromValue(String text) {
       for (ReplicationRoleEnum b : ReplicationRoleEnum.values()) {
         if (String.valueOf(b.value).equals(text)) {
@@ -802,7 +705,6 @@ public class MsgVpn {
       }
       return null;
     }
-
     public static class Adapter extends TypeAdapter<ReplicationRoleEnum> {
       @Override
       public void write(final JsonWriter jsonWriter, final ReplicationRoleEnum enumeration) throws IOException {
@@ -811,13 +713,11 @@ public class MsgVpn {
 
       @Override
       public ReplicationRoleEnum read(final JsonReader jsonReader) throws IOException {
-        String value = jsonReader.nextString();
+        Object value = jsonReader.nextString();
         return ReplicationRoleEnum.fromValue(String.valueOf(value));
       }
     }
-  }
-
-  @SerializedName("replicationRole")
+  }  @SerializedName("replicationRole")
   private ReplicationRoleEnum replicationRole = null;
 
   @SerializedName("replicationStandbyAckPropOutOfSeqRxMsgCount")
@@ -850,7 +750,6 @@ public class MsgVpn {
   @JsonAdapter(ReplicationTransactionModeEnum.Adapter.class)
   public enum ReplicationTransactionModeEnum {
     SYNC("sync"),
-    
     ASYNC("async");
 
     private String value;
@@ -858,7 +757,6 @@ public class MsgVpn {
     ReplicationTransactionModeEnum(String value) {
       this.value = value;
     }
-
     public String getValue() {
       return value;
     }
@@ -867,7 +765,6 @@ public class MsgVpn {
     public String toString() {
       return String.valueOf(value);
     }
-
     public static ReplicationTransactionModeEnum fromValue(String text) {
       for (ReplicationTransactionModeEnum b : ReplicationTransactionModeEnum.values()) {
         if (String.valueOf(b.value).equals(text)) {
@@ -876,7 +773,6 @@ public class MsgVpn {
       }
       return null;
     }
-
     public static class Adapter extends TypeAdapter<ReplicationTransactionModeEnum> {
       @Override
       public void write(final JsonWriter jsonWriter, final ReplicationTransactionModeEnum enumeration) throws IOException {
@@ -885,13 +781,11 @@ public class MsgVpn {
 
       @Override
       public ReplicationTransactionModeEnum read(final JsonReader jsonReader) throws IOException {
-        String value = jsonReader.nextString();
+        Object value = jsonReader.nextString();
         return ReplicationTransactionModeEnum.fromValue(String.valueOf(value));
       }
     }
-  }
-
-  @SerializedName("replicationTransactionMode")
+  }  @SerializedName("replicationTransactionMode")
   private ReplicationTransactionModeEnum replicationTransactionMode = null;
 
   @SerializedName("restTlsServerCertEnforceTrustedCommonNameEnabled")
@@ -902,6 +796,9 @@ public class MsgVpn {
 
   @SerializedName("restTlsServerCertValidateDateEnabled")
   private Boolean restTlsServerCertValidateDateEnabled = null;
+
+  @SerializedName("restTlsServerCertValidateNameEnabled")
+  private Boolean restTlsServerCertValidateNameEnabled = null;
 
   @SerializedName("rxByteCount")
   private Long rxByteCount = null;
@@ -941,9 +838,6 @@ public class MsgVpn {
 
   @SerializedName("sempOverMsgBusEnabled")
   private Boolean sempOverMsgBusEnabled = null;
-
-  @SerializedName("sempOverMsgBusLegacyShowClearEnabled")
-  private Boolean sempOverMsgBusLegacyShowClearEnabled = null;
 
   @SerializedName("sempOverMsgBusShowEnabled")
   private Boolean sempOverMsgBusShowEnabled = null;
@@ -1083,7 +977,6 @@ public class MsgVpn {
   @JsonAdapter(ServiceRestModeEnum.Adapter.class)
   public enum ServiceRestModeEnum {
     GATEWAY("gateway"),
-    
     MESSAGING("messaging");
 
     private String value;
@@ -1091,7 +984,6 @@ public class MsgVpn {
     ServiceRestModeEnum(String value) {
       this.value = value;
     }
-
     public String getValue() {
       return value;
     }
@@ -1100,7 +992,6 @@ public class MsgVpn {
     public String toString() {
       return String.valueOf(value);
     }
-
     public static ServiceRestModeEnum fromValue(String text) {
       for (ServiceRestModeEnum b : ServiceRestModeEnum.values()) {
         if (String.valueOf(b.value).equals(text)) {
@@ -1109,7 +1000,6 @@ public class MsgVpn {
       }
       return null;
     }
-
     public static class Adapter extends TypeAdapter<ServiceRestModeEnum> {
       @Override
       public void write(final JsonWriter jsonWriter, final ServiceRestModeEnum enumeration) throws IOException {
@@ -1118,13 +1008,11 @@ public class MsgVpn {
 
       @Override
       public ServiceRestModeEnum read(final JsonReader jsonReader) throws IOException {
-        String value = jsonReader.nextString();
+        Object value = jsonReader.nextString();
         return ServiceRestModeEnum.fromValue(String.valueOf(value));
       }
     }
-  }
-
-  @SerializedName("serviceRestMode")
+  }  @SerializedName("serviceRestMode")
   private ServiceRestModeEnum serviceRestMode = null;
 
   @SerializedName("serviceRestOutgoingMaxConnectionCount")
@@ -1191,7 +1079,7 @@ public class MsgVpn {
   private Long tlsAverageTxByteRate = null;
 
   @SerializedName("tlsRxByteCount")
-  private Integer tlsRxByteCount = null;
+  private Long tlsRxByteCount = null;
 
   @SerializedName("tlsRxByteRate")
   private Long tlsRxByteRate = null;
@@ -1238,7 +1126,7 @@ public class MsgVpn {
    * The name of another Message VPN which this Message VPN is an alias for. Available since 2.14.
    * @return alias
   **/
-  @ApiModelProperty(value = "The name of another Message VPN which this Message VPN is an alias for. Available since 2.14.")
+  @Schema(description = "The name of another Message VPN which this Message VPN is an alias for. Available since 2.14.")
   public String getAlias() {
     return alias;
   }
@@ -1256,7 +1144,7 @@ public class MsgVpn {
    * Indicates whether basic authentication is enabled for clients connecting to the Message VPN.
    * @return authenticationBasicEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether basic authentication is enabled for clients connecting to the Message VPN.")
+  @Schema(description = "Indicates whether basic authentication is enabled for clients connecting to the Message VPN.")
   public Boolean isAuthenticationBasicEnabled() {
     return authenticationBasicEnabled;
   }
@@ -1274,7 +1162,7 @@ public class MsgVpn {
    * The name of the RADIUS or LDAP Profile to use for basic authentication.
    * @return authenticationBasicProfileName
   **/
-  @ApiModelProperty(value = "The name of the RADIUS or LDAP Profile to use for basic authentication.")
+  @Schema(description = "The name of the RADIUS or LDAP Profile to use for basic authentication.")
   public String getAuthenticationBasicProfileName() {
     return authenticationBasicProfileName;
   }
@@ -1292,7 +1180,7 @@ public class MsgVpn {
    * The RADIUS domain to use for basic authentication.
    * @return authenticationBasicRadiusDomain
   **/
-  @ApiModelProperty(value = "The RADIUS domain to use for basic authentication.")
+  @Schema(description = "The RADIUS domain to use for basic authentication.")
   public String getAuthenticationBasicRadiusDomain() {
     return authenticationBasicRadiusDomain;
   }
@@ -1310,7 +1198,7 @@ public class MsgVpn {
    * The type of basic authentication to use for clients connecting to the Message VPN. The allowed values and their meaning are:  &lt;pre&gt; \&quot;internal\&quot; - Internal database. Authentication is against Client Usernames. \&quot;ldap\&quot; - LDAP authentication. An LDAP profile name must be provided. \&quot;radius\&quot; - RADIUS authentication. A RADIUS profile name must be provided. \&quot;none\&quot; - No authentication. Anonymous login allowed. &lt;/pre&gt; 
    * @return authenticationBasicType
   **/
-  @ApiModelProperty(value = "The type of basic authentication to use for clients connecting to the Message VPN. The allowed values and their meaning are:  <pre> \"internal\" - Internal database. Authentication is against Client Usernames. \"ldap\" - LDAP authentication. An LDAP profile name must be provided. \"radius\" - RADIUS authentication. A RADIUS profile name must be provided. \"none\" - No authentication. Anonymous login allowed. </pre> ")
+  @Schema(description = "The type of basic authentication to use for clients connecting to the Message VPN. The allowed values and their meaning are:  <pre> \"internal\" - Internal database. Authentication is against Client Usernames. \"ldap\" - LDAP authentication. An LDAP profile name must be provided. \"radius\" - RADIUS authentication. A RADIUS profile name must be provided. \"none\" - No authentication. Anonymous login allowed. </pre> ")
   public AuthenticationBasicTypeEnum getAuthenticationBasicType() {
     return authenticationBasicType;
   }
@@ -1328,7 +1216,7 @@ public class MsgVpn {
    * Indicates whether a client is allowed to specify a Client Username via the API connect method. When disabled, the certificate CN (Common Name) is always used.
    * @return authenticationClientCertAllowApiProvidedUsernameEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether a client is allowed to specify a Client Username via the API connect method. When disabled, the certificate CN (Common Name) is always used.")
+  @Schema(description = "Indicates whether a client is allowed to specify a Client Username via the API connect method. When disabled, the certificate CN (Common Name) is always used.")
   public Boolean isAuthenticationClientCertAllowApiProvidedUsernameEnabled() {
     return authenticationClientCertAllowApiProvidedUsernameEnabled;
   }
@@ -1346,7 +1234,7 @@ public class MsgVpn {
    * Indicates whether client certificate authentication is enabled in the Message VPN.
    * @return authenticationClientCertEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether client certificate authentication is enabled in the Message VPN.")
+  @Schema(description = "Indicates whether client certificate authentication is enabled in the Message VPN.")
   public Boolean isAuthenticationClientCertEnabled() {
     return authenticationClientCertEnabled;
   }
@@ -1364,7 +1252,7 @@ public class MsgVpn {
    * The maximum depth for a client certificate chain. The depth of a chain is defined as the number of signing CA certificates that are present in the chain back to a trusted self-signed root CA certificate.
    * @return authenticationClientCertMaxChainDepth
   **/
-  @ApiModelProperty(value = "The maximum depth for a client certificate chain. The depth of a chain is defined as the number of signing CA certificates that are present in the chain back to a trusted self-signed root CA certificate.")
+  @Schema(description = "The maximum depth for a client certificate chain. The depth of a chain is defined as the number of signing CA certificates that are present in the chain back to a trusted self-signed root CA certificate.")
   public Long getAuthenticationClientCertMaxChainDepth() {
     return authenticationClientCertMaxChainDepth;
   }
@@ -1382,7 +1270,7 @@ public class MsgVpn {
    * The desired behavior for client certificate revocation checking. The allowed values and their meaning are:  &lt;pre&gt; \&quot;allow-all\&quot; - Allow the client to authenticate, the result of client certificate revocation check is ignored. \&quot;allow-unknown\&quot; - Allow the client to authenticate even if the revocation status of his certificate cannot be determined. \&quot;allow-valid\&quot; - Allow the client to authenticate only when the revocation check returned an explicit positive response. &lt;/pre&gt; 
    * @return authenticationClientCertRevocationCheckMode
   **/
-  @ApiModelProperty(value = "The desired behavior for client certificate revocation checking. The allowed values and their meaning are:  <pre> \"allow-all\" - Allow the client to authenticate, the result of client certificate revocation check is ignored. \"allow-unknown\" - Allow the client to authenticate even if the revocation status of his certificate cannot be determined. \"allow-valid\" - Allow the client to authenticate only when the revocation check returned an explicit positive response. </pre> ")
+  @Schema(description = "The desired behavior for client certificate revocation checking. The allowed values and their meaning are:  <pre> \"allow-all\" - Allow the client to authenticate, the result of client certificate revocation check is ignored. \"allow-unknown\" - Allow the client to authenticate even if the revocation status of his certificate cannot be determined. \"allow-valid\" - Allow the client to authenticate only when the revocation check returned an explicit positive response. </pre> ")
   public AuthenticationClientCertRevocationCheckModeEnum getAuthenticationClientCertRevocationCheckMode() {
     return authenticationClientCertRevocationCheckMode;
   }
@@ -1397,10 +1285,10 @@ public class MsgVpn {
   }
 
    /**
-   * The field from the client certificate to use as the client username. The allowed values and their meaning are:  &lt;pre&gt; \&quot;common-name\&quot; - The username is extracted from the certificate&#39;s Common Name. \&quot;subject-alternate-name-msupn\&quot; - The username is extracted from the certificate&#39;s Other Name type of the Subject Alternative Name and must have the msUPN signature. &lt;/pre&gt; 
+   * The field from the client certificate to use as the client username. The allowed values and their meaning are:  &lt;pre&gt; \&quot;common-name\&quot; - The username is extracted from the certificate&#x27;s Common Name. \&quot;subject-alternate-name-msupn\&quot; - The username is extracted from the certificate&#x27;s Other Name type of the Subject Alternative Name and must have the msUPN signature. &lt;/pre&gt; 
    * @return authenticationClientCertUsernameSource
   **/
-  @ApiModelProperty(value = "The field from the client certificate to use as the client username. The allowed values and their meaning are:  <pre> \"common-name\" - The username is extracted from the certificate's Common Name. \"subject-alternate-name-msupn\" - The username is extracted from the certificate's Other Name type of the Subject Alternative Name and must have the msUPN signature. </pre> ")
+  @Schema(description = "The field from the client certificate to use as the client username. The allowed values and their meaning are:  <pre> \"common-name\" - The username is extracted from the certificate's Common Name. \"subject-alternate-name-msupn\" - The username is extracted from the certificate's Other Name type of the Subject Alternative Name and must have the msUPN signature. </pre> ")
   public AuthenticationClientCertUsernameSourceEnum getAuthenticationClientCertUsernameSource() {
     return authenticationClientCertUsernameSource;
   }
@@ -1418,7 +1306,7 @@ public class MsgVpn {
    * Indicates whether the \&quot;Not Before\&quot; and \&quot;Not After\&quot; validity dates in the client certificate are checked.
    * @return authenticationClientCertValidateDateEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the \"Not Before\" and \"Not After\" validity dates in the client certificate are checked.")
+  @Schema(description = "Indicates whether the \"Not Before\" and \"Not After\" validity dates in the client certificate are checked.")
   public Boolean isAuthenticationClientCertValidateDateEnabled() {
     return authenticationClientCertValidateDateEnabled;
   }
@@ -1436,7 +1324,7 @@ public class MsgVpn {
    * Indicates whether a client is allowed to specify a Client Username via the API connect method. When disabled, the Kerberos Principal name is always used.
    * @return authenticationKerberosAllowApiProvidedUsernameEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether a client is allowed to specify a Client Username via the API connect method. When disabled, the Kerberos Principal name is always used.")
+  @Schema(description = "Indicates whether a client is allowed to specify a Client Username via the API connect method. When disabled, the Kerberos Principal name is always used.")
   public Boolean isAuthenticationKerberosAllowApiProvidedUsernameEnabled() {
     return authenticationKerberosAllowApiProvidedUsernameEnabled;
   }
@@ -1454,7 +1342,7 @@ public class MsgVpn {
    * Indicates whether Kerberos authentication is enabled in the Message VPN.
    * @return authenticationKerberosEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether Kerberos authentication is enabled in the Message VPN.")
+  @Schema(description = "Indicates whether Kerberos authentication is enabled in the Message VPN.")
   public Boolean isAuthenticationKerberosEnabled() {
     return authenticationKerberosEnabled;
   }
@@ -1472,7 +1360,7 @@ public class MsgVpn {
    * The name of the provider to use when the client does not supply a provider name. Available since 2.13.
    * @return authenticationOauthDefaultProviderName
   **/
-  @ApiModelProperty(value = "The name of the provider to use when the client does not supply a provider name. Available since 2.13.")
+  @Schema(description = "The name of the provider to use when the client does not supply a provider name. Available since 2.13.")
   public String getAuthenticationOauthDefaultProviderName() {
     return authenticationOauthDefaultProviderName;
   }
@@ -1490,7 +1378,7 @@ public class MsgVpn {
    * Indicates whether OAuth authentication is enabled. Available since 2.13.
    * @return authenticationOauthEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether OAuth authentication is enabled. Available since 2.13.")
+  @Schema(description = "Indicates whether OAuth authentication is enabled. Available since 2.13.")
   public Boolean isAuthenticationOauthEnabled() {
     return authenticationOauthEnabled;
   }
@@ -1508,7 +1396,7 @@ public class MsgVpn {
    * The name of the attribute that is retrieved from the LDAP server as part of the LDAP search when authorizing a client connecting to the Message VPN.
    * @return authorizationLdapGroupMembershipAttributeName
   **/
-  @ApiModelProperty(value = "The name of the attribute that is retrieved from the LDAP server as part of the LDAP search when authorizing a client connecting to the Message VPN.")
+  @Schema(description = "The name of the attribute that is retrieved from the LDAP server as part of the LDAP search when authorizing a client connecting to the Message VPN.")
   public String getAuthorizationLdapGroupMembershipAttributeName() {
     return authorizationLdapGroupMembershipAttributeName;
   }
@@ -1526,7 +1414,7 @@ public class MsgVpn {
    * Indicates whether client-username domain trimming for LDAP lookups of client connections is enabled. Available since 2.13.
    * @return authorizationLdapTrimClientUsernameDomainEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether client-username domain trimming for LDAP lookups of client connections is enabled. Available since 2.13.")
+  @Schema(description = "Indicates whether client-username domain trimming for LDAP lookups of client connections is enabled. Available since 2.13.")
   public Boolean isAuthorizationLdapTrimClientUsernameDomainEnabled() {
     return authorizationLdapTrimClientUsernameDomainEnabled;
   }
@@ -1544,7 +1432,7 @@ public class MsgVpn {
    * The name of the LDAP Profile to use for client authorization.
    * @return authorizationProfileName
   **/
-  @ApiModelProperty(value = "The name of the LDAP Profile to use for client authorization.")
+  @Schema(description = "The name of the LDAP Profile to use for client authorization.")
   public String getAuthorizationProfileName() {
     return authorizationProfileName;
   }
@@ -1562,7 +1450,7 @@ public class MsgVpn {
    * The type of authorization to use for clients connecting to the Message VPN. The allowed values and their meaning are:  &lt;pre&gt; \&quot;ldap\&quot; - LDAP authorization. \&quot;internal\&quot; - Internal authorization. &lt;/pre&gt; 
    * @return authorizationType
   **/
-  @ApiModelProperty(value = "The type of authorization to use for clients connecting to the Message VPN. The allowed values and their meaning are:  <pre> \"ldap\" - LDAP authorization. \"internal\" - Internal authorization. </pre> ")
+  @Schema(description = "The type of authorization to use for clients connecting to the Message VPN. The allowed values and their meaning are:  <pre> \"ldap\" - LDAP authorization. \"internal\" - Internal authorization. </pre> ")
   public AuthorizationTypeEnum getAuthorizationType() {
     return authorizationType;
   }
@@ -1580,7 +1468,7 @@ public class MsgVpn {
    * The one minute average of the message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.
    * @return averageRxByteRate
   **/
-  @ApiModelProperty(value = "The one minute average of the message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
+  @Schema(description = "The one minute average of the message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
   public Long getAverageRxByteRate() {
     return averageRxByteRate;
   }
@@ -1598,7 +1486,7 @@ public class MsgVpn {
    * The one minute average of the compressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.
    * @return averageRxCompressedByteRate
   **/
-  @ApiModelProperty(value = "The one minute average of the compressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
+  @Schema(description = "The one minute average of the compressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
   public Long getAverageRxCompressedByteRate() {
     return averageRxCompressedByteRate;
   }
@@ -1616,7 +1504,7 @@ public class MsgVpn {
    * The one minute average of the message rate received by the Message VPN, in messages per second (msg/sec). Available since 2.13.
    * @return averageRxMsgRate
   **/
-  @ApiModelProperty(value = "The one minute average of the message rate received by the Message VPN, in messages per second (msg/sec). Available since 2.13.")
+  @Schema(description = "The one minute average of the message rate received by the Message VPN, in messages per second (msg/sec). Available since 2.13.")
   public Long getAverageRxMsgRate() {
     return averageRxMsgRate;
   }
@@ -1634,7 +1522,7 @@ public class MsgVpn {
    * The one minute average of the uncompressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.
    * @return averageRxUncompressedByteRate
   **/
-  @ApiModelProperty(value = "The one minute average of the uncompressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
+  @Schema(description = "The one minute average of the uncompressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
   public Long getAverageRxUncompressedByteRate() {
     return averageRxUncompressedByteRate;
   }
@@ -1652,7 +1540,7 @@ public class MsgVpn {
    * The one minute average of the message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.
    * @return averageTxByteRate
   **/
-  @ApiModelProperty(value = "The one minute average of the message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
+  @Schema(description = "The one minute average of the message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
   public Long getAverageTxByteRate() {
     return averageTxByteRate;
   }
@@ -1670,7 +1558,7 @@ public class MsgVpn {
    * The one minute average of the compressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.
    * @return averageTxCompressedByteRate
   **/
-  @ApiModelProperty(value = "The one minute average of the compressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
+  @Schema(description = "The one minute average of the compressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
   public Long getAverageTxCompressedByteRate() {
     return averageTxCompressedByteRate;
   }
@@ -1688,7 +1576,7 @@ public class MsgVpn {
    * The one minute average of the message rate transmitted by the Message VPN, in messages per second (msg/sec). Available since 2.13.
    * @return averageTxMsgRate
   **/
-  @ApiModelProperty(value = "The one minute average of the message rate transmitted by the Message VPN, in messages per second (msg/sec). Available since 2.13.")
+  @Schema(description = "The one minute average of the message rate transmitted by the Message VPN, in messages per second (msg/sec). Available since 2.13.")
   public Long getAverageTxMsgRate() {
     return averageTxMsgRate;
   }
@@ -1706,7 +1594,7 @@ public class MsgVpn {
    * The one minute average of the uncompressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.
    * @return averageTxUncompressedByteRate
   **/
-  @ApiModelProperty(value = "The one minute average of the uncompressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
+  @Schema(description = "The one minute average of the uncompressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
   public Long getAverageTxUncompressedByteRate() {
     return averageTxUncompressedByteRate;
   }
@@ -1724,7 +1612,7 @@ public class MsgVpn {
    * Indicates whether the Common Name (CN) in the server certificate from the remote broker is validated for the Bridge.
    * @return bridgingTlsServerCertEnforceTrustedCommonNameEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the Common Name (CN) in the server certificate from the remote broker is validated for the Bridge.")
+  @Schema(description = "Indicates whether the Common Name (CN) in the server certificate from the remote broker is validated for the Bridge.")
   public Boolean isBridgingTlsServerCertEnforceTrustedCommonNameEnabled() {
     return bridgingTlsServerCertEnforceTrustedCommonNameEnabled;
   }
@@ -1742,7 +1630,7 @@ public class MsgVpn {
    * The maximum depth for a server certificate chain. The depth of a chain is defined as the number of signing CA certificates that are present in the chain back to a trusted self-signed root CA certificate.
    * @return bridgingTlsServerCertMaxChainDepth
   **/
-  @ApiModelProperty(value = "The maximum depth for a server certificate chain. The depth of a chain is defined as the number of signing CA certificates that are present in the chain back to a trusted self-signed root CA certificate.")
+  @Schema(description = "The maximum depth for a server certificate chain. The depth of a chain is defined as the number of signing CA certificates that are present in the chain back to a trusted self-signed root CA certificate.")
   public Long getBridgingTlsServerCertMaxChainDepth() {
     return bridgingTlsServerCertMaxChainDepth;
   }
@@ -1760,7 +1648,7 @@ public class MsgVpn {
    * Indicates whether the \&quot;Not Before\&quot; and \&quot;Not After\&quot; validity dates in the server certificate are checked.
    * @return bridgingTlsServerCertValidateDateEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the \"Not Before\" and \"Not After\" validity dates in the server certificate are checked.")
+  @Schema(description = "Indicates whether the \"Not Before\" and \"Not After\" validity dates in the server certificate are checked.")
   public Boolean isBridgingTlsServerCertValidateDateEnabled() {
     return bridgingTlsServerCertValidateDateEnabled;
   }
@@ -1778,7 +1666,7 @@ public class MsgVpn {
    * The key for the config sync table of the local Message VPN. Available since 2.12.
    * @return configSyncLocalKey
   **/
-  @ApiModelProperty(value = "The key for the config sync table of the local Message VPN. Available since 2.12.")
+  @Schema(description = "The key for the config sync table of the local Message VPN. Available since 2.12.")
   public String getConfigSyncLocalKey() {
     return configSyncLocalKey;
   }
@@ -1796,7 +1684,7 @@ public class MsgVpn {
    * The result of the last operation on the config sync table of the local Message VPN. Available since 2.12.
    * @return configSyncLocalLastResult
   **/
-  @ApiModelProperty(value = "The result of the last operation on the config sync table of the local Message VPN. Available since 2.12.")
+  @Schema(description = "The result of the last operation on the config sync table of the local Message VPN. Available since 2.12.")
   public String getConfigSyncLocalLastResult() {
     return configSyncLocalLastResult;
   }
@@ -1814,7 +1702,7 @@ public class MsgVpn {
    * The role of the config sync table of the local Message VPN. The allowed values and their meaning are:  &lt;pre&gt; \&quot;unknown\&quot; - The role is unknown. \&quot;primary\&quot; - Acts as the primary source of config data. \&quot;replica\&quot; - Acts as a replica of the primary config data. &lt;/pre&gt;  Available since 2.12.
    * @return configSyncLocalRole
   **/
-  @ApiModelProperty(value = "The role of the config sync table of the local Message VPN. The allowed values and their meaning are:  <pre> \"unknown\" - The role is unknown. \"primary\" - Acts as the primary source of config data. \"replica\" - Acts as a replica of the primary config data. </pre>  Available since 2.12.")
+  @Schema(description = "The role of the config sync table of the local Message VPN. The allowed values and their meaning are:  <pre> \"unknown\" - The role is unknown. \"primary\" - Acts as the primary source of config data. \"replica\" - Acts as a replica of the primary config data. </pre>  Available since 2.12.")
   public String getConfigSyncLocalRole() {
     return configSyncLocalRole;
   }
@@ -1832,7 +1720,7 @@ public class MsgVpn {
    * The state of the config sync table of the local Message VPN. The allowed values and their meaning are:  &lt;pre&gt; \&quot;unknown\&quot; - The state is unknown. \&quot;in-sync\&quot; - The config data is synchronized between Message VPNs. \&quot;reconciling\&quot; - The config data is reconciling between Message VPNs. \&quot;blocked\&quot; - The config data is blocked from reconciling due to an error. \&quot;out-of-sync\&quot; - The config data is out of sync between Message VPNs. \&quot;down\&quot; - The state is down due to configuration. &lt;/pre&gt;  Available since 2.12.
    * @return configSyncLocalState
   **/
-  @ApiModelProperty(value = "The state of the config sync table of the local Message VPN. The allowed values and their meaning are:  <pre> \"unknown\" - The state is unknown. \"in-sync\" - The config data is synchronized between Message VPNs. \"reconciling\" - The config data is reconciling between Message VPNs. \"blocked\" - The config data is blocked from reconciling due to an error. \"out-of-sync\" - The config data is out of sync between Message VPNs. \"down\" - The state is down due to configuration. </pre>  Available since 2.12.")
+  @Schema(description = "The state of the config sync table of the local Message VPN. The allowed values and their meaning are:  <pre> \"unknown\" - The state is unknown. \"in-sync\" - The config data is synchronized between Message VPNs. \"reconciling\" - The config data is reconciling between Message VPNs. \"blocked\" - The config data is blocked from reconciling due to an error. \"out-of-sync\" - The config data is out of sync between Message VPNs. \"down\" - The state is down due to configuration. </pre>  Available since 2.12.")
   public String getConfigSyncLocalState() {
     return configSyncLocalState;
   }
@@ -1850,7 +1738,7 @@ public class MsgVpn {
    * The amount of time in seconds the config sync table of the local Message VPN has been in the current state. Available since 2.12.
    * @return configSyncLocalTimeInState
   **/
-  @ApiModelProperty(value = "The amount of time in seconds the config sync table of the local Message VPN has been in the current state. Available since 2.12.")
+  @Schema(description = "The amount of time in seconds the config sync table of the local Message VPN has been in the current state. Available since 2.12.")
   public Integer getConfigSyncLocalTimeInState() {
     return configSyncLocalTimeInState;
   }
@@ -1868,7 +1756,7 @@ public class MsgVpn {
    * The amount of client control messages received from clients by the Message VPN, in bytes (B). Available since 2.13.
    * @return controlRxByteCount
   **/
-  @ApiModelProperty(value = "The amount of client control messages received from clients by the Message VPN, in bytes (B). Available since 2.13.")
+  @Schema(description = "The amount of client control messages received from clients by the Message VPN, in bytes (B). Available since 2.13.")
   public Long getControlRxByteCount() {
     return controlRxByteCount;
   }
@@ -1886,7 +1774,7 @@ public class MsgVpn {
    * The number of client control messages received from clients by the Message VPN. Available since 2.13.
    * @return controlRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of client control messages received from clients by the Message VPN. Available since 2.13.")
+  @Schema(description = "The number of client control messages received from clients by the Message VPN. Available since 2.13.")
   public Long getControlRxMsgCount() {
     return controlRxMsgCount;
   }
@@ -1904,7 +1792,7 @@ public class MsgVpn {
    * The amount of client control messages transmitted to clients by the Message VPN, in bytes (B). Available since 2.13.
    * @return controlTxByteCount
   **/
-  @ApiModelProperty(value = "The amount of client control messages transmitted to clients by the Message VPN, in bytes (B). Available since 2.13.")
+  @Schema(description = "The amount of client control messages transmitted to clients by the Message VPN, in bytes (B). Available since 2.13.")
   public Long getControlTxByteCount() {
     return controlTxByteCount;
   }
@@ -1922,7 +1810,7 @@ public class MsgVpn {
    * The number of client control messages transmitted to clients by the Message VPN. Available since 2.13.
    * @return controlTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of client control messages transmitted to clients by the Message VPN. Available since 2.13.")
+  @Schema(description = "The number of client control messages transmitted to clients by the Message VPN. Available since 2.13.")
   public Long getControlTxMsgCount() {
     return controlTxMsgCount;
   }
@@ -1940,7 +1828,7 @@ public class MsgVpn {
    * Get counter
    * @return counter
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public MsgVpnCounter getCounter() {
     return counter;
   }
@@ -1958,7 +1846,7 @@ public class MsgVpn {
    * The amount of client data messages received from clients by the Message VPN, in bytes (B). Available since 2.13.
    * @return dataRxByteCount
   **/
-  @ApiModelProperty(value = "The amount of client data messages received from clients by the Message VPN, in bytes (B). Available since 2.13.")
+  @Schema(description = "The amount of client data messages received from clients by the Message VPN, in bytes (B). Available since 2.13.")
   public Long getDataRxByteCount() {
     return dataRxByteCount;
   }
@@ -1976,7 +1864,7 @@ public class MsgVpn {
    * The number of client data messages received from clients by the Message VPN. Available since 2.13.
    * @return dataRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of client data messages received from clients by the Message VPN. Available since 2.13.")
+  @Schema(description = "The number of client data messages received from clients by the Message VPN. Available since 2.13.")
   public Long getDataRxMsgCount() {
     return dataRxMsgCount;
   }
@@ -1994,7 +1882,7 @@ public class MsgVpn {
    * The amount of client data messages transmitted to clients by the Message VPN, in bytes (B). Available since 2.13.
    * @return dataTxByteCount
   **/
-  @ApiModelProperty(value = "The amount of client data messages transmitted to clients by the Message VPN, in bytes (B). Available since 2.13.")
+  @Schema(description = "The amount of client data messages transmitted to clients by the Message VPN, in bytes (B). Available since 2.13.")
   public Long getDataTxByteCount() {
     return dataTxByteCount;
   }
@@ -2012,7 +1900,7 @@ public class MsgVpn {
    * The number of client data messages transmitted to clients by the Message VPN. Available since 2.13.
    * @return dataTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of client data messages transmitted to clients by the Message VPN. Available since 2.13.")
+  @Schema(description = "The number of client data messages transmitted to clients by the Message VPN. Available since 2.13.")
   public Long getDataTxMsgCount() {
     return dataTxMsgCount;
   }
@@ -2030,7 +1918,7 @@ public class MsgVpn {
    * The number of messages discarded during reception by the Message VPN. Available since 2.13.
    * @return discardedRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages discarded during reception by the Message VPN. Available since 2.13.")
+  @Schema(description = "The number of messages discarded during reception by the Message VPN. Available since 2.13.")
   public Integer getDiscardedRxMsgCount() {
     return discardedRxMsgCount;
   }
@@ -2048,7 +1936,7 @@ public class MsgVpn {
    * The number of messages discarded during transmission by the Message VPN. Available since 2.13.
    * @return discardedTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages discarded during transmission by the Message VPN. Available since 2.13.")
+  @Schema(description = "The number of messages discarded during transmission by the Message VPN. Available since 2.13.")
   public Integer getDiscardedTxMsgCount() {
     return discardedTxMsgCount;
   }
@@ -2066,7 +1954,7 @@ public class MsgVpn {
    * Indicates whether managing of cache instances over the message bus is enabled in the Message VPN.
    * @return distributedCacheManagementEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether managing of cache instances over the message bus is enabled in the Message VPN.")
+  @Schema(description = "Indicates whether managing of cache instances over the message bus is enabled in the Message VPN.")
   public Boolean isDistributedCacheManagementEnabled() {
     return distributedCacheManagementEnabled;
   }
@@ -2084,7 +1972,7 @@ public class MsgVpn {
    * Indicates whether Dynamic Message Routing (DMR) is enabled for the Message VPN.
    * @return dmrEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether Dynamic Message Routing (DMR) is enabled for the Message VPN.")
+  @Schema(description = "Indicates whether Dynamic Message Routing (DMR) is enabled for the Message VPN.")
   public Boolean isDmrEnabled() {
     return dmrEnabled;
   }
@@ -2102,7 +1990,7 @@ public class MsgVpn {
    * Indicates whether the Message VPN is enabled.
    * @return enabled
   **/
-  @ApiModelProperty(value = "Indicates whether the Message VPN is enabled.")
+  @Schema(description = "Indicates whether the Message VPN is enabled.")
   public Boolean isEnabled() {
     return enabled;
   }
@@ -2120,7 +2008,7 @@ public class MsgVpn {
    * Get eventConnectionCountThreshold
    * @return eventConnectionCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventConnectionCountThreshold() {
     return eventConnectionCountThreshold;
   }
@@ -2138,7 +2026,7 @@ public class MsgVpn {
    * Get eventEgressFlowCountThreshold
    * @return eventEgressFlowCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventEgressFlowCountThreshold() {
     return eventEgressFlowCountThreshold;
   }
@@ -2156,7 +2044,7 @@ public class MsgVpn {
    * Get eventEgressMsgRateThreshold
    * @return eventEgressMsgRateThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThresholdByValue getEventEgressMsgRateThreshold() {
     return eventEgressMsgRateThreshold;
   }
@@ -2174,7 +2062,7 @@ public class MsgVpn {
    * Get eventEndpointCountThreshold
    * @return eventEndpointCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventEndpointCountThreshold() {
     return eventEndpointCountThreshold;
   }
@@ -2192,7 +2080,7 @@ public class MsgVpn {
    * Get eventIngressFlowCountThreshold
    * @return eventIngressFlowCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventIngressFlowCountThreshold() {
     return eventIngressFlowCountThreshold;
   }
@@ -2210,7 +2098,7 @@ public class MsgVpn {
    * Get eventIngressMsgRateThreshold
    * @return eventIngressMsgRateThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThresholdByValue getEventIngressMsgRateThreshold() {
     return eventIngressMsgRateThreshold;
   }
@@ -2228,7 +2116,7 @@ public class MsgVpn {
    * Exceeding this message size in kilobytes (KB) triggers a corresponding Event in the Message VPN.
    * @return eventLargeMsgThreshold
   **/
-  @ApiModelProperty(value = "Exceeding this message size in kilobytes (KB) triggers a corresponding Event in the Message VPN.")
+  @Schema(description = "Exceeding this message size in kilobytes (KB) triggers a corresponding Event in the Message VPN.")
   public Long getEventLargeMsgThreshold() {
     return eventLargeMsgThreshold;
   }
@@ -2246,7 +2134,7 @@ public class MsgVpn {
    * The value of the prefix applied to all published Events in the Message VPN.
    * @return eventLogTag
   **/
-  @ApiModelProperty(value = "The value of the prefix applied to all published Events in the Message VPN.")
+  @Schema(description = "The value of the prefix applied to all published Events in the Message VPN.")
   public String getEventLogTag() {
     return eventLogTag;
   }
@@ -2264,7 +2152,7 @@ public class MsgVpn {
    * Get eventMsgSpoolUsageThreshold
    * @return eventMsgSpoolUsageThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventMsgSpoolUsageThreshold() {
     return eventMsgSpoolUsageThreshold;
   }
@@ -2282,7 +2170,7 @@ public class MsgVpn {
    * Indicates whether client Events are published in the Message VPN.
    * @return eventPublishClientEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether client Events are published in the Message VPN.")
+  @Schema(description = "Indicates whether client Events are published in the Message VPN.")
   public Boolean isEventPublishClientEnabled() {
     return eventPublishClientEnabled;
   }
@@ -2300,7 +2188,7 @@ public class MsgVpn {
    * Indicates whether Message VPN Events are published in the Message VPN.
    * @return eventPublishMsgVpnEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether Message VPN Events are published in the Message VPN.")
+  @Schema(description = "Indicates whether Message VPN Events are published in the Message VPN.")
   public Boolean isEventPublishMsgVpnEnabled() {
     return eventPublishMsgVpnEnabled;
   }
@@ -2318,7 +2206,7 @@ public class MsgVpn {
    * The mode of subscription Events published in the Message VPN. The allowed values and their meaning are:  &lt;pre&gt; \&quot;off\&quot; - Disable client level event message publishing. \&quot;on-with-format-v1\&quot; - Enable client level event message publishing with format v1. \&quot;on-with-no-unsubscribe-events-on-disconnect-format-v1\&quot; - As \&quot;on-with-format-v1\&quot;, but unsubscribe events are not generated when a client disconnects. Unsubscribe events are still raised when a client explicitly unsubscribes from its subscriptions. \&quot;on-with-format-v2\&quot; - Enable client level event message publishing with format v2. \&quot;on-with-no-unsubscribe-events-on-disconnect-format-v2\&quot; - As \&quot;on-with-format-v2\&quot;, but unsubscribe events are not generated when a client disconnects. Unsubscribe events are still raised when a client explicitly unsubscribes from its subscriptions. &lt;/pre&gt; 
    * @return eventPublishSubscriptionMode
   **/
-  @ApiModelProperty(value = "The mode of subscription Events published in the Message VPN. The allowed values and their meaning are:  <pre> \"off\" - Disable client level event message publishing. \"on-with-format-v1\" - Enable client level event message publishing with format v1. \"on-with-no-unsubscribe-events-on-disconnect-format-v1\" - As \"on-with-format-v1\", but unsubscribe events are not generated when a client disconnects. Unsubscribe events are still raised when a client explicitly unsubscribes from its subscriptions. \"on-with-format-v2\" - Enable client level event message publishing with format v2. \"on-with-no-unsubscribe-events-on-disconnect-format-v2\" - As \"on-with-format-v2\", but unsubscribe events are not generated when a client disconnects. Unsubscribe events are still raised when a client explicitly unsubscribes from its subscriptions. </pre> ")
+  @Schema(description = "The mode of subscription Events published in the Message VPN. The allowed values and their meaning are:  <pre> \"off\" - Disable client level event message publishing. \"on-with-format-v1\" - Enable client level event message publishing with format v1. \"on-with-no-unsubscribe-events-on-disconnect-format-v1\" - As \"on-with-format-v1\", but unsubscribe events are not generated when a client disconnects. Unsubscribe events are still raised when a client explicitly unsubscribes from its subscriptions. \"on-with-format-v2\" - Enable client level event message publishing with format v2. \"on-with-no-unsubscribe-events-on-disconnect-format-v2\" - As \"on-with-format-v2\", but unsubscribe events are not generated when a client disconnects. Unsubscribe events are still raised when a client explicitly unsubscribes from its subscriptions. </pre> ")
   public EventPublishSubscriptionModeEnum getEventPublishSubscriptionMode() {
     return eventPublishSubscriptionMode;
   }
@@ -2336,7 +2224,7 @@ public class MsgVpn {
    * Indicates whether Message VPN Events are published in the MQTT format.
    * @return eventPublishTopicFormatMqttEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether Message VPN Events are published in the MQTT format.")
+  @Schema(description = "Indicates whether Message VPN Events are published in the MQTT format.")
   public Boolean isEventPublishTopicFormatMqttEnabled() {
     return eventPublishTopicFormatMqttEnabled;
   }
@@ -2354,7 +2242,7 @@ public class MsgVpn {
    * Indicates whether Message VPN Events are published in the SMF format.
    * @return eventPublishTopicFormatSmfEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether Message VPN Events are published in the SMF format.")
+  @Schema(description = "Indicates whether Message VPN Events are published in the SMF format.")
   public Boolean isEventPublishTopicFormatSmfEnabled() {
     return eventPublishTopicFormatSmfEnabled;
   }
@@ -2372,7 +2260,7 @@ public class MsgVpn {
    * Get eventServiceAmqpConnectionCountThreshold
    * @return eventServiceAmqpConnectionCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventServiceAmqpConnectionCountThreshold() {
     return eventServiceAmqpConnectionCountThreshold;
   }
@@ -2390,7 +2278,7 @@ public class MsgVpn {
    * Get eventServiceMqttConnectionCountThreshold
    * @return eventServiceMqttConnectionCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventServiceMqttConnectionCountThreshold() {
     return eventServiceMqttConnectionCountThreshold;
   }
@@ -2408,7 +2296,7 @@ public class MsgVpn {
    * Get eventServiceRestIncomingConnectionCountThreshold
    * @return eventServiceRestIncomingConnectionCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventServiceRestIncomingConnectionCountThreshold() {
     return eventServiceRestIncomingConnectionCountThreshold;
   }
@@ -2426,7 +2314,7 @@ public class MsgVpn {
    * Get eventServiceSmfConnectionCountThreshold
    * @return eventServiceSmfConnectionCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventServiceSmfConnectionCountThreshold() {
     return eventServiceSmfConnectionCountThreshold;
   }
@@ -2444,7 +2332,7 @@ public class MsgVpn {
    * Get eventServiceWebConnectionCountThreshold
    * @return eventServiceWebConnectionCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventServiceWebConnectionCountThreshold() {
     return eventServiceWebConnectionCountThreshold;
   }
@@ -2462,7 +2350,7 @@ public class MsgVpn {
    * Get eventSubscriptionCountThreshold
    * @return eventSubscriptionCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventSubscriptionCountThreshold() {
     return eventSubscriptionCountThreshold;
   }
@@ -2480,7 +2368,7 @@ public class MsgVpn {
    * Get eventTransactedSessionCountThreshold
    * @return eventTransactedSessionCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventTransactedSessionCountThreshold() {
     return eventTransactedSessionCountThreshold;
   }
@@ -2498,7 +2386,7 @@ public class MsgVpn {
    * Get eventTransactionCountThreshold
    * @return eventTransactionCountThreshold
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public EventThreshold getEventTransactionCountThreshold() {
     return eventTransactionCountThreshold;
   }
@@ -2516,7 +2404,7 @@ public class MsgVpn {
    * Indicates whether exports of subscriptions to other routers in the network over neighbour links is enabled in the Message VPN.
    * @return exportSubscriptionsEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether exports of subscriptions to other routers in the network over neighbour links is enabled in the Message VPN.")
+  @Schema(description = "Indicates whether exports of subscriptions to other routers in the network over neighbour links is enabled in the Message VPN.")
   public Boolean isExportSubscriptionsEnabled() {
     return exportSubscriptionsEnabled;
   }
@@ -2534,7 +2422,7 @@ public class MsgVpn {
    * The reason for the Message VPN failure.
    * @return failureReason
   **/
-  @ApiModelProperty(value = "The reason for the Message VPN failure.")
+  @Schema(description = "The reason for the Message VPN failure.")
   public String getFailureReason() {
     return failureReason;
   }
@@ -2552,7 +2440,7 @@ public class MsgVpn {
    * Indicates whether the JNDI access for clients is enabled in the Message VPN.
    * @return jndiEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the JNDI access for clients is enabled in the Message VPN.")
+  @Schema(description = "Indicates whether the JNDI access for clients is enabled in the Message VPN.")
   public Boolean isJndiEnabled() {
     return jndiEnabled;
   }
@@ -2570,7 +2458,7 @@ public class MsgVpn {
    * The number of login request messages received by the Message VPN. Available since 2.13.
    * @return loginRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of login request messages received by the Message VPN. Available since 2.13.")
+  @Schema(description = "The number of login request messages received by the Message VPN. Available since 2.13.")
   public Long getLoginRxMsgCount() {
     return loginRxMsgCount;
   }
@@ -2588,7 +2476,7 @@ public class MsgVpn {
    * The number of login response messages transmitted by the Message VPN. Available since 2.13.
    * @return loginTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of login response messages transmitted by the Message VPN. Available since 2.13.")
+  @Schema(description = "The number of login response messages transmitted by the Message VPN. Available since 2.13.")
   public Long getLoginTxMsgCount() {
     return loginTxMsgCount;
   }
@@ -2606,7 +2494,7 @@ public class MsgVpn {
    * The maximum number of client connections to the Message VPN.
    * @return maxConnectionCount
   **/
-  @ApiModelProperty(value = "The maximum number of client connections to the Message VPN.")
+  @Schema(description = "The maximum number of client connections to the Message VPN.")
   public Long getMaxConnectionCount() {
     return maxConnectionCount;
   }
@@ -2624,7 +2512,7 @@ public class MsgVpn {
    * The effective maximum number of Queues and Topic Endpoints allowed in the Message VPN.
    * @return maxEffectiveEndpointCount
   **/
-  @ApiModelProperty(value = "The effective maximum number of Queues and Topic Endpoints allowed in the Message VPN.")
+  @Schema(description = "The effective maximum number of Queues and Topic Endpoints allowed in the Message VPN.")
   public Integer getMaxEffectiveEndpointCount() {
     return maxEffectiveEndpointCount;
   }
@@ -2642,7 +2530,7 @@ public class MsgVpn {
    * The effective maximum number of receive flows allowed in the Message VPN.
    * @return maxEffectiveRxFlowCount
   **/
-  @ApiModelProperty(value = "The effective maximum number of receive flows allowed in the Message VPN.")
+  @Schema(description = "The effective maximum number of receive flows allowed in the Message VPN.")
   public Integer getMaxEffectiveRxFlowCount() {
     return maxEffectiveRxFlowCount;
   }
@@ -2660,7 +2548,7 @@ public class MsgVpn {
    * The effective maximum number of subscriptions allowed in the Message VPN.
    * @return maxEffectiveSubscriptionCount
   **/
-  @ApiModelProperty(value = "The effective maximum number of subscriptions allowed in the Message VPN.")
+  @Schema(description = "The effective maximum number of subscriptions allowed in the Message VPN.")
   public Long getMaxEffectiveSubscriptionCount() {
     return maxEffectiveSubscriptionCount;
   }
@@ -2678,7 +2566,7 @@ public class MsgVpn {
    * The effective maximum number of transacted sessions allowed in the Message VPN.
    * @return maxEffectiveTransactedSessionCount
   **/
-  @ApiModelProperty(value = "The effective maximum number of transacted sessions allowed in the Message VPN.")
+  @Schema(description = "The effective maximum number of transacted sessions allowed in the Message VPN.")
   public Integer getMaxEffectiveTransactedSessionCount() {
     return maxEffectiveTransactedSessionCount;
   }
@@ -2696,7 +2584,7 @@ public class MsgVpn {
    * The effective maximum number of transactions allowed in the Message VPN.
    * @return maxEffectiveTransactionCount
   **/
-  @ApiModelProperty(value = "The effective maximum number of transactions allowed in the Message VPN.")
+  @Schema(description = "The effective maximum number of transactions allowed in the Message VPN.")
   public Integer getMaxEffectiveTransactionCount() {
     return maxEffectiveTransactionCount;
   }
@@ -2714,7 +2602,7 @@ public class MsgVpn {
    * The effective maximum number of transmit flows allowed in the Message VPN.
    * @return maxEffectiveTxFlowCount
   **/
-  @ApiModelProperty(value = "The effective maximum number of transmit flows allowed in the Message VPN.")
+  @Schema(description = "The effective maximum number of transmit flows allowed in the Message VPN.")
   public Integer getMaxEffectiveTxFlowCount() {
     return maxEffectiveTxFlowCount;
   }
@@ -2732,7 +2620,7 @@ public class MsgVpn {
    * The maximum number of transmit flows that can be created in the Message VPN.
    * @return maxEgressFlowCount
   **/
-  @ApiModelProperty(value = "The maximum number of transmit flows that can be created in the Message VPN.")
+  @Schema(description = "The maximum number of transmit flows that can be created in the Message VPN.")
   public Long getMaxEgressFlowCount() {
     return maxEgressFlowCount;
   }
@@ -2750,7 +2638,7 @@ public class MsgVpn {
    * The maximum number of Queues and Topic Endpoints that can be created in the Message VPN.
    * @return maxEndpointCount
   **/
-  @ApiModelProperty(value = "The maximum number of Queues and Topic Endpoints that can be created in the Message VPN.")
+  @Schema(description = "The maximum number of Queues and Topic Endpoints that can be created in the Message VPN.")
   public Long getMaxEndpointCount() {
     return maxEndpointCount;
   }
@@ -2768,7 +2656,7 @@ public class MsgVpn {
    * The maximum number of receive flows that can be created in the Message VPN.
    * @return maxIngressFlowCount
   **/
-  @ApiModelProperty(value = "The maximum number of receive flows that can be created in the Message VPN.")
+  @Schema(description = "The maximum number of receive flows that can be created in the Message VPN.")
   public Long getMaxIngressFlowCount() {
     return maxIngressFlowCount;
   }
@@ -2786,7 +2674,7 @@ public class MsgVpn {
    * The maximum message spool usage by the Message VPN, in megabytes.
    * @return maxMsgSpoolUsage
   **/
-  @ApiModelProperty(value = "The maximum message spool usage by the Message VPN, in megabytes.")
+  @Schema(description = "The maximum message spool usage by the Message VPN, in megabytes.")
   public Long getMaxMsgSpoolUsage() {
     return maxMsgSpoolUsage;
   }
@@ -2804,7 +2692,7 @@ public class MsgVpn {
    * The maximum number of local client subscriptions (both primary and backup) that can be added to the Message VPN.
    * @return maxSubscriptionCount
   **/
-  @ApiModelProperty(value = "The maximum number of local client subscriptions (both primary and backup) that can be added to the Message VPN.")
+  @Schema(description = "The maximum number of local client subscriptions (both primary and backup) that can be added to the Message VPN.")
   public Long getMaxSubscriptionCount() {
     return maxSubscriptionCount;
   }
@@ -2822,7 +2710,7 @@ public class MsgVpn {
    * The maximum number of transacted sessions that can be created in the Message VPN.
    * @return maxTransactedSessionCount
   **/
-  @ApiModelProperty(value = "The maximum number of transacted sessions that can be created in the Message VPN.")
+  @Schema(description = "The maximum number of transacted sessions that can be created in the Message VPN.")
   public Long getMaxTransactedSessionCount() {
     return maxTransactedSessionCount;
   }
@@ -2840,7 +2728,7 @@ public class MsgVpn {
    * The maximum number of transactions that can be created in the Message VPN.
    * @return maxTransactionCount
   **/
-  @ApiModelProperty(value = "The maximum number of transactions that can be created in the Message VPN.")
+  @Schema(description = "The maximum number of transactions that can be created in the Message VPN.")
   public Long getMaxTransactionCount() {
     return maxTransactionCount;
   }
@@ -2858,7 +2746,7 @@ public class MsgVpn {
    * The maximum total memory usage of the MQTT Retain feature for this Message VPN, in MB. If the maximum memory is reached, any arriving retain messages that require more memory are discarded. A value of -1 indicates that the memory is bounded only by the global max memory limit. A value of 0 prevents MQTT Retain from becoming operational.
    * @return mqttRetainMaxMemory
   **/
-  @ApiModelProperty(value = "The maximum total memory usage of the MQTT Retain feature for this Message VPN, in MB. If the maximum memory is reached, any arriving retain messages that require more memory are discarded. A value of -1 indicates that the memory is bounded only by the global max memory limit. A value of 0 prevents MQTT Retain from becoming operational.")
+  @Schema(description = "The maximum total memory usage of the MQTT Retain feature for this Message VPN, in MB. If the maximum memory is reached, any arriving retain messages that require more memory are discarded. A value of -1 indicates that the memory is bounded only by the global max memory limit. A value of 0 prevents MQTT Retain from becoming operational.")
   public Integer getMqttRetainMaxMemory() {
     return mqttRetainMaxMemory;
   }
@@ -2876,7 +2764,7 @@ public class MsgVpn {
    * The number of message replays that are currently active in the Message VPN.
    * @return msgReplayActiveCount
   **/
-  @ApiModelProperty(value = "The number of message replays that are currently active in the Message VPN.")
+  @Schema(description = "The number of message replays that are currently active in the Message VPN.")
   public Integer getMsgReplayActiveCount() {
     return msgReplayActiveCount;
   }
@@ -2894,7 +2782,7 @@ public class MsgVpn {
    * The number of message replays that are currently failed in the Message VPN.
    * @return msgReplayFailedCount
   **/
-  @ApiModelProperty(value = "The number of message replays that are currently failed in the Message VPN.")
+  @Schema(description = "The number of message replays that are currently failed in the Message VPN.")
   public Integer getMsgReplayFailedCount() {
     return msgReplayFailedCount;
   }
@@ -2912,7 +2800,7 @@ public class MsgVpn {
    * The number of message replays that are currently initializing in the Message VPN.
    * @return msgReplayInitializingCount
   **/
-  @ApiModelProperty(value = "The number of message replays that are currently initializing in the Message VPN.")
+  @Schema(description = "The number of message replays that are currently initializing in the Message VPN.")
   public Integer getMsgReplayInitializingCount() {
     return msgReplayInitializingCount;
   }
@@ -2930,7 +2818,7 @@ public class MsgVpn {
    * The number of message replays that are pending complete in the Message VPN.
    * @return msgReplayPendingCompleteCount
   **/
-  @ApiModelProperty(value = "The number of message replays that are pending complete in the Message VPN.")
+  @Schema(description = "The number of message replays that are pending complete in the Message VPN.")
   public Integer getMsgReplayPendingCompleteCount() {
     return msgReplayPendingCompleteCount;
   }
@@ -2948,7 +2836,7 @@ public class MsgVpn {
    * The current number of messages spooled (persisted in the Message Spool) in the Message VPN. Available since 2.14.
    * @return msgSpoolMsgCount
   **/
-  @ApiModelProperty(value = "The current number of messages spooled (persisted in the Message Spool) in the Message VPN. Available since 2.14.")
+  @Schema(description = "The current number of messages spooled (persisted in the Message Spool) in the Message VPN. Available since 2.14.")
   public Long getMsgSpoolMsgCount() {
     return msgSpoolMsgCount;
   }
@@ -2966,7 +2854,7 @@ public class MsgVpn {
    * The number of guaranteed messages received by the Message VPN. Available since 2.13.
    * @return msgSpoolRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of guaranteed messages received by the Message VPN. Available since 2.13.")
+  @Schema(description = "The number of guaranteed messages received by the Message VPN. Available since 2.13.")
   public Long getMsgSpoolRxMsgCount() {
     return msgSpoolRxMsgCount;
   }
@@ -2984,7 +2872,7 @@ public class MsgVpn {
    * The number of guaranteed messages transmitted by the Message VPN. One message to multiple clients is counted as one message. Available since 2.13.
    * @return msgSpoolTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of guaranteed messages transmitted by the Message VPN. One message to multiple clients is counted as one message. Available since 2.13.")
+  @Schema(description = "The number of guaranteed messages transmitted by the Message VPN. One message to multiple clients is counted as one message. Available since 2.13.")
   public Long getMsgSpoolTxMsgCount() {
     return msgSpoolTxMsgCount;
   }
@@ -3002,7 +2890,7 @@ public class MsgVpn {
    * The current message spool usage by the Message VPN, in bytes (B).
    * @return msgSpoolUsage
   **/
-  @ApiModelProperty(value = "The current message spool usage by the Message VPN, in bytes (B).")
+  @Schema(description = "The current message spool usage by the Message VPN, in bytes (B).")
   public Long getMsgSpoolUsage() {
     return msgSpoolUsage;
   }
@@ -3020,31 +2908,13 @@ public class MsgVpn {
    * The name of the Message VPN.
    * @return msgVpnName
   **/
-  @ApiModelProperty(value = "The name of the Message VPN.")
+  @Schema(description = "The name of the Message VPN.")
   public String getMsgVpnName() {
     return msgVpnName;
   }
 
   public void setMsgVpnName(String msgVpnName) {
     this.msgVpnName = msgVpnName;
-  }
-
-  public MsgVpn preferIpVersion(PreferIpVersionEnum preferIpVersion) {
-    this.preferIpVersion = preferIpVersion;
-    return this;
-  }
-
-   /**
-   * IP version to use if DNS lookup contains both an IPv4 and IPv6 address. The allowed values and their meaning are:  &lt;pre&gt; \&quot;ipv4\&quot; - Use IPv4 address when DNS lookup contains both an IPv4 and IPv6 address. \&quot;ipv6\&quot; - Use IPv6 address when DNS lookup contains both an IPv4 and IPv6 address. &lt;/pre&gt; 
-   * @return preferIpVersion
-  **/
-  @ApiModelProperty(value = "IP version to use if DNS lookup contains both an IPv4 and IPv6 address. The allowed values and their meaning are:  <pre> \"ipv4\" - Use IPv4 address when DNS lookup contains both an IPv4 and IPv6 address. \"ipv6\" - Use IPv6 address when DNS lookup contains both an IPv4 and IPv6 address. </pre> ")
-  public PreferIpVersionEnum getPreferIpVersion() {
-    return preferIpVersion;
-  }
-
-  public void setPreferIpVersion(PreferIpVersionEnum preferIpVersion) {
-    this.preferIpVersion = preferIpVersion;
   }
 
   public MsgVpn rate(MsgVpnRate rate) {
@@ -3056,7 +2926,7 @@ public class MsgVpn {
    * Get rate
    * @return rate
   **/
-  @ApiModelProperty(value = "")
+  @Schema(description = "")
   public MsgVpnRate getRate() {
     return rate;
   }
@@ -3074,7 +2944,7 @@ public class MsgVpn {
    * The acknowledgement (ACK) propagation interval for the replication Bridge, in number of replicated messages. Available since 2.12.
    * @return replicationAckPropagationIntervalMsgCount
   **/
-  @ApiModelProperty(value = "The acknowledgement (ACK) propagation interval for the replication Bridge, in number of replicated messages. Available since 2.12.")
+  @Schema(description = "The acknowledgement (ACK) propagation interval for the replication Bridge, in number of replicated messages. Available since 2.12.")
   public Long getReplicationAckPropagationIntervalMsgCount() {
     return replicationAckPropagationIntervalMsgCount;
   }
@@ -3092,7 +2962,7 @@ public class MsgVpn {
    * The number of acknowledgement messages propagated to the replication standby remote Message VPN. Available since 2.12.
    * @return replicationActiveAckPropTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of acknowledgement messages propagated to the replication standby remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of acknowledgement messages propagated to the replication standby remote Message VPN. Available since 2.12.")
   public Long getReplicationActiveAckPropTxMsgCount() {
     return replicationActiveAckPropTxMsgCount;
   }
@@ -3110,7 +2980,7 @@ public class MsgVpn {
    * The number of async messages queued to the replication standby remote Message VPN. Available since 2.12.
    * @return replicationActiveAsyncQueuedMsgCount
   **/
-  @ApiModelProperty(value = "The number of async messages queued to the replication standby remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of async messages queued to the replication standby remote Message VPN. Available since 2.12.")
   public Long getReplicationActiveAsyncQueuedMsgCount() {
     return replicationActiveAsyncQueuedMsgCount;
   }
@@ -3128,7 +2998,7 @@ public class MsgVpn {
    * The number of messages consumed in the replication active local Message VPN. Available since 2.12.
    * @return replicationActiveLocallyConsumedMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages consumed in the replication active local Message VPN. Available since 2.12.")
+  @Schema(description = "The number of messages consumed in the replication active local Message VPN. Available since 2.12.")
   public Long getReplicationActiveLocallyConsumedMsgCount() {
     return replicationActiveLocallyConsumedMsgCount;
   }
@@ -3146,7 +3016,7 @@ public class MsgVpn {
    * The peak amount of time in seconds the message flow has been congested to the replication standby remote Message VPN. Available since 2.12.
    * @return replicationActiveMateFlowCongestedPeakTime
   **/
-  @ApiModelProperty(value = "The peak amount of time in seconds the message flow has been congested to the replication standby remote Message VPN. Available since 2.12.")
+  @Schema(description = "The peak amount of time in seconds the message flow has been congested to the replication standby remote Message VPN. Available since 2.12.")
   public Integer getReplicationActiveMateFlowCongestedPeakTime() {
     return replicationActiveMateFlowCongestedPeakTime;
   }
@@ -3164,7 +3034,7 @@ public class MsgVpn {
    * The peak amount of time in seconds the message flow has not been congested to the replication standby remote Message VPN. Available since 2.12.
    * @return replicationActiveMateFlowNotCongestedPeakTime
   **/
-  @ApiModelProperty(value = "The peak amount of time in seconds the message flow has not been congested to the replication standby remote Message VPN. Available since 2.12.")
+  @Schema(description = "The peak amount of time in seconds the message flow has not been congested to the replication standby remote Message VPN. Available since 2.12.")
   public Integer getReplicationActiveMateFlowNotCongestedPeakTime() {
     return replicationActiveMateFlowNotCongestedPeakTime;
   }
@@ -3182,7 +3052,7 @@ public class MsgVpn {
    * The number of promoted messages queued to the replication standby remote Message VPN. Available since 2.12.
    * @return replicationActivePromotedQueuedMsgCount
   **/
-  @ApiModelProperty(value = "The number of promoted messages queued to the replication standby remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of promoted messages queued to the replication standby remote Message VPN. Available since 2.12.")
   public Long getReplicationActivePromotedQueuedMsgCount() {
     return replicationActivePromotedQueuedMsgCount;
   }
@@ -3200,7 +3070,7 @@ public class MsgVpn {
    * The number of reconcile request messages received from the replication standby remote Message VPN. Available since 2.12.
    * @return replicationActiveReconcileRequestRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of reconcile request messages received from the replication standby remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of reconcile request messages received from the replication standby remote Message VPN. Available since 2.12.")
   public Long getReplicationActiveReconcileRequestRxMsgCount() {
     return replicationActiveReconcileRequestRxMsgCount;
   }
@@ -3218,7 +3088,7 @@ public class MsgVpn {
    * The peak amount of time in seconds sync replication has been eligible to the replication standby remote Message VPN. Available since 2.12.
    * @return replicationActiveSyncEligiblePeakTime
   **/
-  @ApiModelProperty(value = "The peak amount of time in seconds sync replication has been eligible to the replication standby remote Message VPN. Available since 2.12.")
+  @Schema(description = "The peak amount of time in seconds sync replication has been eligible to the replication standby remote Message VPN. Available since 2.12.")
   public Integer getReplicationActiveSyncEligiblePeakTime() {
     return replicationActiveSyncEligiblePeakTime;
   }
@@ -3236,7 +3106,7 @@ public class MsgVpn {
    * The peak amount of time in seconds sync replication has been ineligible to the replication standby remote Message VPN. Available since 2.12.
    * @return replicationActiveSyncIneligiblePeakTime
   **/
-  @ApiModelProperty(value = "The peak amount of time in seconds sync replication has been ineligible to the replication standby remote Message VPN. Available since 2.12.")
+  @Schema(description = "The peak amount of time in seconds sync replication has been ineligible to the replication standby remote Message VPN. Available since 2.12.")
   public Integer getReplicationActiveSyncIneligiblePeakTime() {
     return replicationActiveSyncIneligiblePeakTime;
   }
@@ -3254,7 +3124,7 @@ public class MsgVpn {
    * The number of sync messages queued as async to the replication standby remote Message VPN. Available since 2.12.
    * @return replicationActiveSyncQueuedAsAsyncMsgCount
   **/
-  @ApiModelProperty(value = "The number of sync messages queued as async to the replication standby remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of sync messages queued as async to the replication standby remote Message VPN. Available since 2.12.")
   public Long getReplicationActiveSyncQueuedAsAsyncMsgCount() {
     return replicationActiveSyncQueuedAsAsyncMsgCount;
   }
@@ -3272,7 +3142,7 @@ public class MsgVpn {
    * The number of sync messages queued to the replication standby remote Message VPN. Available since 2.12.
    * @return replicationActiveSyncQueuedMsgCount
   **/
-  @ApiModelProperty(value = "The number of sync messages queued to the replication standby remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of sync messages queued to the replication standby remote Message VPN. Available since 2.12.")
   public Long getReplicationActiveSyncQueuedMsgCount() {
     return replicationActiveSyncQueuedMsgCount;
   }
@@ -3290,7 +3160,7 @@ public class MsgVpn {
    * The number of sync replication ineligible transitions to the replication standby remote Message VPN. Available since 2.12.
    * @return replicationActiveTransitionToSyncIneligibleCount
   **/
-  @ApiModelProperty(value = "The number of sync replication ineligible transitions to the replication standby remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of sync replication ineligible transitions to the replication standby remote Message VPN. Available since 2.12.")
   public Long getReplicationActiveTransitionToSyncIneligibleCount() {
     return replicationActiveTransitionToSyncIneligibleCount;
   }
@@ -3308,7 +3178,7 @@ public class MsgVpn {
    * The Client Username the replication Bridge uses to login to the remote Message VPN. Available since 2.12.
    * @return replicationBridgeAuthenticationBasicClientUsername
   **/
-  @ApiModelProperty(value = "The Client Username the replication Bridge uses to login to the remote Message VPN. Available since 2.12.")
+  @Schema(description = "The Client Username the replication Bridge uses to login to the remote Message VPN. Available since 2.12.")
   public String getReplicationBridgeAuthenticationBasicClientUsername() {
     return replicationBridgeAuthenticationBasicClientUsername;
   }
@@ -3326,7 +3196,7 @@ public class MsgVpn {
    * The authentication scheme for the replication Bridge in the Message VPN. The allowed values and their meaning are:  &lt;pre&gt; \&quot;basic\&quot; - Basic Authentication Scheme (via username and password). \&quot;client-certificate\&quot; - Client Certificate Authentication Scheme (via certificate file or content). &lt;/pre&gt;  Available since 2.12.
    * @return replicationBridgeAuthenticationScheme
   **/
-  @ApiModelProperty(value = "The authentication scheme for the replication Bridge in the Message VPN. The allowed values and their meaning are:  <pre> \"basic\" - Basic Authentication Scheme (via username and password). \"client-certificate\" - Client Certificate Authentication Scheme (via certificate file or content). </pre>  Available since 2.12.")
+  @Schema(description = "The authentication scheme for the replication Bridge in the Message VPN. The allowed values and their meaning are:  <pre> \"basic\" - Basic Authentication Scheme (via username and password). \"client-certificate\" - Client Certificate Authentication Scheme (via certificate file or content). </pre>  Available since 2.12.")
   public ReplicationBridgeAuthenticationSchemeEnum getReplicationBridgeAuthenticationScheme() {
     return replicationBridgeAuthenticationScheme;
   }
@@ -3344,7 +3214,7 @@ public class MsgVpn {
    * Indicates whether the local replication Bridge is bound to the Queue in the remote Message VPN. Available since 2.12.
    * @return replicationBridgeBoundToQueue
   **/
-  @ApiModelProperty(value = "Indicates whether the local replication Bridge is bound to the Queue in the remote Message VPN. Available since 2.12.")
+  @Schema(description = "Indicates whether the local replication Bridge is bound to the Queue in the remote Message VPN. Available since 2.12.")
   public Boolean isReplicationBridgeBoundToQueue() {
     return replicationBridgeBoundToQueue;
   }
@@ -3362,7 +3232,7 @@ public class MsgVpn {
    * Indicates whether compression is used for the replication Bridge. Available since 2.12.
    * @return replicationBridgeCompressedDataEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether compression is used for the replication Bridge. Available since 2.12.")
+  @Schema(description = "Indicates whether compression is used for the replication Bridge. Available since 2.12.")
   public Boolean isReplicationBridgeCompressedDataEnabled() {
     return replicationBridgeCompressedDataEnabled;
   }
@@ -3380,7 +3250,7 @@ public class MsgVpn {
    * The size of the window used for guaranteed messages published to the replication Bridge, in messages. Available since 2.12.
    * @return replicationBridgeEgressFlowWindowSize
   **/
-  @ApiModelProperty(value = "The size of the window used for guaranteed messages published to the replication Bridge, in messages. Available since 2.12.")
+  @Schema(description = "The size of the window used for guaranteed messages published to the replication Bridge, in messages. Available since 2.12.")
   public Long getReplicationBridgeEgressFlowWindowSize() {
     return replicationBridgeEgressFlowWindowSize;
   }
@@ -3398,7 +3268,7 @@ public class MsgVpn {
    * The name of the local replication Bridge in the Message VPN. Available since 2.12.
    * @return replicationBridgeName
   **/
-  @ApiModelProperty(value = "The name of the local replication Bridge in the Message VPN. Available since 2.12.")
+  @Schema(description = "The name of the local replication Bridge in the Message VPN. Available since 2.12.")
   public String getReplicationBridgeName() {
     return replicationBridgeName;
   }
@@ -3416,7 +3286,7 @@ public class MsgVpn {
    * The number of seconds that must pass before retrying the replication Bridge connection. Available since 2.12.
    * @return replicationBridgeRetryDelay
   **/
-  @ApiModelProperty(value = "The number of seconds that must pass before retrying the replication Bridge connection. Available since 2.12.")
+  @Schema(description = "The number of seconds that must pass before retrying the replication Bridge connection. Available since 2.12.")
   public Long getReplicationBridgeRetryDelay() {
     return replicationBridgeRetryDelay;
   }
@@ -3434,7 +3304,7 @@ public class MsgVpn {
    * Indicates whether encryption (TLS) is enabled for the replication Bridge connection. Available since 2.12.
    * @return replicationBridgeTlsEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether encryption (TLS) is enabled for the replication Bridge connection. Available since 2.12.")
+  @Schema(description = "Indicates whether encryption (TLS) is enabled for the replication Bridge connection. Available since 2.12.")
   public Boolean isReplicationBridgeTlsEnabled() {
     return replicationBridgeTlsEnabled;
   }
@@ -3452,7 +3322,7 @@ public class MsgVpn {
    * The Client Profile for the unidirectional replication Bridge in the Message VPN. It is used only for the TCP parameters. Available since 2.12.
    * @return replicationBridgeUnidirectionalClientProfileName
   **/
-  @ApiModelProperty(value = "The Client Profile for the unidirectional replication Bridge in the Message VPN. It is used only for the TCP parameters. Available since 2.12.")
+  @Schema(description = "The Client Profile for the unidirectional replication Bridge in the Message VPN. It is used only for the TCP parameters. Available since 2.12.")
   public String getReplicationBridgeUnidirectionalClientProfileName() {
     return replicationBridgeUnidirectionalClientProfileName;
   }
@@ -3470,7 +3340,7 @@ public class MsgVpn {
    * Indicates whether the local replication Bridge is operationally up in the Message VPN. Available since 2.12.
    * @return replicationBridgeUp
   **/
-  @ApiModelProperty(value = "Indicates whether the local replication Bridge is operationally up in the Message VPN. Available since 2.12.")
+  @Schema(description = "Indicates whether the local replication Bridge is operationally up in the Message VPN. Available since 2.12.")
   public Boolean isReplicationBridgeUp() {
     return replicationBridgeUp;
   }
@@ -3488,7 +3358,7 @@ public class MsgVpn {
    * Indicates whether replication is enabled for the Message VPN. Available since 2.12.
    * @return replicationEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether replication is enabled for the Message VPN. Available since 2.12.")
+  @Schema(description = "Indicates whether replication is enabled for the Message VPN. Available since 2.12.")
   public Boolean isReplicationEnabled() {
     return replicationEnabled;
   }
@@ -3506,7 +3376,7 @@ public class MsgVpn {
    * Indicates whether the remote replication Bridge is bound to the Queue in the Message VPN. Available since 2.12.
    * @return replicationQueueBound
   **/
-  @ApiModelProperty(value = "Indicates whether the remote replication Bridge is bound to the Queue in the Message VPN. Available since 2.12.")
+  @Schema(description = "Indicates whether the remote replication Bridge is bound to the Queue in the Message VPN. Available since 2.12.")
   public Boolean isReplicationQueueBound() {
     return replicationQueueBound;
   }
@@ -3524,7 +3394,7 @@ public class MsgVpn {
    * The maximum message spool usage by the replication Bridge local Queue (quota), in megabytes. Available since 2.12.
    * @return replicationQueueMaxMsgSpoolUsage
   **/
-  @ApiModelProperty(value = "The maximum message spool usage by the replication Bridge local Queue (quota), in megabytes. Available since 2.12.")
+  @Schema(description = "The maximum message spool usage by the replication Bridge local Queue (quota), in megabytes. Available since 2.12.")
   public Long getReplicationQueueMaxMsgSpoolUsage() {
     return replicationQueueMaxMsgSpoolUsage;
   }
@@ -3542,7 +3412,7 @@ public class MsgVpn {
    * Indicates whether messages discarded on this replication Bridge Queue are rejected back to the sender. Available since 2.12.
    * @return replicationQueueRejectMsgToSenderOnDiscardEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether messages discarded on this replication Bridge Queue are rejected back to the sender. Available since 2.12.")
+  @Schema(description = "Indicates whether messages discarded on this replication Bridge Queue are rejected back to the sender. Available since 2.12.")
   public Boolean isReplicationQueueRejectMsgToSenderOnDiscardEnabled() {
     return replicationQueueRejectMsgToSenderOnDiscardEnabled;
   }
@@ -3560,7 +3430,7 @@ public class MsgVpn {
    * Indicates whether guaranteed messages published to synchronously replicated Topics are rejected back to the sender when synchronous replication becomes ineligible. Available since 2.12.
    * @return replicationRejectMsgWhenSyncIneligibleEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether guaranteed messages published to synchronously replicated Topics are rejected back to the sender when synchronous replication becomes ineligible. Available since 2.12.")
+  @Schema(description = "Indicates whether guaranteed messages published to synchronously replicated Topics are rejected back to the sender when synchronous replication becomes ineligible. Available since 2.12.")
   public Boolean isReplicationRejectMsgWhenSyncIneligibleEnabled() {
     return replicationRejectMsgWhenSyncIneligibleEnabled;
   }
@@ -3578,7 +3448,7 @@ public class MsgVpn {
    * The name of the remote replication Bridge in the Message VPN. Available since 2.12.
    * @return replicationRemoteBridgeName
   **/
-  @ApiModelProperty(value = "The name of the remote replication Bridge in the Message VPN. Available since 2.12.")
+  @Schema(description = "The name of the remote replication Bridge in the Message VPN. Available since 2.12.")
   public String getReplicationRemoteBridgeName() {
     return replicationRemoteBridgeName;
   }
@@ -3596,7 +3466,7 @@ public class MsgVpn {
    * Indicates whether the remote replication Bridge is operationally up in the Message VPN. Available since 2.12.
    * @return replicationRemoteBridgeUp
   **/
-  @ApiModelProperty(value = "Indicates whether the remote replication Bridge is operationally up in the Message VPN. Available since 2.12.")
+  @Schema(description = "Indicates whether the remote replication Bridge is operationally up in the Message VPN. Available since 2.12.")
   public Boolean isReplicationRemoteBridgeUp() {
     return replicationRemoteBridgeUp;
   }
@@ -3614,7 +3484,7 @@ public class MsgVpn {
    * The replication role for the Message VPN. The allowed values and their meaning are:  &lt;pre&gt; \&quot;active\&quot; - Assume the Active role in replication for the Message VPN. \&quot;standby\&quot; - Assume the Standby role in replication for the Message VPN. &lt;/pre&gt;  Available since 2.12.
    * @return replicationRole
   **/
-  @ApiModelProperty(value = "The replication role for the Message VPN. The allowed values and their meaning are:  <pre> \"active\" - Assume the Active role in replication for the Message VPN. \"standby\" - Assume the Standby role in replication for the Message VPN. </pre>  Available since 2.12.")
+  @Schema(description = "The replication role for the Message VPN. The allowed values and their meaning are:  <pre> \"active\" - Assume the Active role in replication for the Message VPN. \"standby\" - Assume the Standby role in replication for the Message VPN. </pre>  Available since 2.12.")
   public ReplicationRoleEnum getReplicationRole() {
     return replicationRole;
   }
@@ -3632,7 +3502,7 @@ public class MsgVpn {
    * The number of acknowledgement messages received out of sequence from the replication active remote Message VPN. Available since 2.12.
    * @return replicationStandbyAckPropOutOfSeqRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of acknowledgement messages received out of sequence from the replication active remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of acknowledgement messages received out of sequence from the replication active remote Message VPN. Available since 2.12.")
   public Long getReplicationStandbyAckPropOutOfSeqRxMsgCount() {
     return replicationStandbyAckPropOutOfSeqRxMsgCount;
   }
@@ -3650,7 +3520,7 @@ public class MsgVpn {
    * The number of acknowledgement messages received from the replication active remote Message VPN. Available since 2.12.
    * @return replicationStandbyAckPropRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of acknowledgement messages received from the replication active remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of acknowledgement messages received from the replication active remote Message VPN. Available since 2.12.")
   public Long getReplicationStandbyAckPropRxMsgCount() {
     return replicationStandbyAckPropRxMsgCount;
   }
@@ -3668,7 +3538,7 @@ public class MsgVpn {
    * The number of reconcile request messages transmitted to the replication active remote Message VPN. Available since 2.12.
    * @return replicationStandbyReconcileRequestTxMsgCount
   **/
-  @ApiModelProperty(value = "The number of reconcile request messages transmitted to the replication active remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of reconcile request messages transmitted to the replication active remote Message VPN. Available since 2.12.")
   public Long getReplicationStandbyReconcileRequestTxMsgCount() {
     return replicationStandbyReconcileRequestTxMsgCount;
   }
@@ -3686,7 +3556,7 @@ public class MsgVpn {
    * The number of messages received from the replication active remote Message VPN. Available since 2.12.
    * @return replicationStandbyRxMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages received from the replication active remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of messages received from the replication active remote Message VPN. Available since 2.12.")
   public Long getReplicationStandbyRxMsgCount() {
     return replicationStandbyRxMsgCount;
   }
@@ -3704,7 +3574,7 @@ public class MsgVpn {
    * The number of transaction requests received from the replication active remote Message VPN. Available since 2.12.
    * @return replicationStandbyTransactionRequestCount
   **/
-  @ApiModelProperty(value = "The number of transaction requests received from the replication active remote Message VPN. Available since 2.12.")
+  @Schema(description = "The number of transaction requests received from the replication active remote Message VPN. Available since 2.12.")
   public Long getReplicationStandbyTransactionRequestCount() {
     return replicationStandbyTransactionRequestCount;
   }
@@ -3722,7 +3592,7 @@ public class MsgVpn {
    * The number of transaction requests received from the replication active remote Message VPN that failed. Available since 2.12.
    * @return replicationStandbyTransactionRequestFailureCount
   **/
-  @ApiModelProperty(value = "The number of transaction requests received from the replication active remote Message VPN that failed. Available since 2.12.")
+  @Schema(description = "The number of transaction requests received from the replication active remote Message VPN that failed. Available since 2.12.")
   public Long getReplicationStandbyTransactionRequestFailureCount() {
     return replicationStandbyTransactionRequestFailureCount;
   }
@@ -3740,7 +3610,7 @@ public class MsgVpn {
    * The number of transaction requests received from the replication active remote Message VPN that succeeded. Available since 2.12.
    * @return replicationStandbyTransactionRequestSuccessCount
   **/
-  @ApiModelProperty(value = "The number of transaction requests received from the replication active remote Message VPN that succeeded. Available since 2.12.")
+  @Schema(description = "The number of transaction requests received from the replication active remote Message VPN that succeeded. Available since 2.12.")
   public Long getReplicationStandbyTransactionRequestSuccessCount() {
     return replicationStandbyTransactionRequestSuccessCount;
   }
@@ -3758,7 +3628,7 @@ public class MsgVpn {
    * Indicates whether sync replication is eligible in the Message VPN. Available since 2.12.
    * @return replicationSyncEligible
   **/
-  @ApiModelProperty(value = "Indicates whether sync replication is eligible in the Message VPN. Available since 2.12.")
+  @Schema(description = "Indicates whether sync replication is eligible in the Message VPN. Available since 2.12.")
   public Boolean isReplicationSyncEligible() {
     return replicationSyncEligible;
   }
@@ -3776,7 +3646,7 @@ public class MsgVpn {
    * Indicates whether synchronous or asynchronous replication mode is used for all transactions within the Message VPN. The allowed values and their meaning are:  &lt;pre&gt; \&quot;sync\&quot; - Messages are acknowledged when replicated (spooled remotely). \&quot;async\&quot; - Messages are acknowledged when pending replication (spooled locally). &lt;/pre&gt;  Available since 2.12.
    * @return replicationTransactionMode
   **/
-  @ApiModelProperty(value = "Indicates whether synchronous or asynchronous replication mode is used for all transactions within the Message VPN. The allowed values and their meaning are:  <pre> \"sync\" - Messages are acknowledged when replicated (spooled remotely). \"async\" - Messages are acknowledged when pending replication (spooled locally). </pre>  Available since 2.12.")
+  @Schema(description = "Indicates whether synchronous or asynchronous replication mode is used for all transactions within the Message VPN. The allowed values and their meaning are:  <pre> \"sync\" - Messages are acknowledged when replicated (spooled remotely). \"async\" - Messages are acknowledged when pending replication (spooled locally). </pre>  Available since 2.12.")
   public ReplicationTransactionModeEnum getReplicationTransactionMode() {
     return replicationTransactionMode;
   }
@@ -3791,10 +3661,10 @@ public class MsgVpn {
   }
 
    /**
-   * Indicates whether the Common Name (CN) in the server certificate from the remote REST Consumer is validated.
+   * Indicates whether the Common Name (CN) in the server certificate from the remote REST Consumer is validated. Deprecated since 2.17. Common Name validation has been replaced by Server Certificate Name validation.
    * @return restTlsServerCertEnforceTrustedCommonNameEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the Common Name (CN) in the server certificate from the remote REST Consumer is validated.")
+  @Schema(description = "Indicates whether the Common Name (CN) in the server certificate from the remote REST Consumer is validated. Deprecated since 2.17. Common Name validation has been replaced by Server Certificate Name validation.")
   public Boolean isRestTlsServerCertEnforceTrustedCommonNameEnabled() {
     return restTlsServerCertEnforceTrustedCommonNameEnabled;
   }
@@ -3812,7 +3682,7 @@ public class MsgVpn {
    * The maximum depth for a REST Consumer server certificate chain. The depth of a chain is defined as the number of signing CA certificates that are present in the chain back to a trusted self-signed root CA certificate.
    * @return restTlsServerCertMaxChainDepth
   **/
-  @ApiModelProperty(value = "The maximum depth for a REST Consumer server certificate chain. The depth of a chain is defined as the number of signing CA certificates that are present in the chain back to a trusted self-signed root CA certificate.")
+  @Schema(description = "The maximum depth for a REST Consumer server certificate chain. The depth of a chain is defined as the number of signing CA certificates that are present in the chain back to a trusted self-signed root CA certificate.")
   public Long getRestTlsServerCertMaxChainDepth() {
     return restTlsServerCertMaxChainDepth;
   }
@@ -3830,13 +3700,31 @@ public class MsgVpn {
    * Indicates whether the \&quot;Not Before\&quot; and \&quot;Not After\&quot; validity dates in the REST Consumer server certificate are checked.
    * @return restTlsServerCertValidateDateEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the \"Not Before\" and \"Not After\" validity dates in the REST Consumer server certificate are checked.")
+  @Schema(description = "Indicates whether the \"Not Before\" and \"Not After\" validity dates in the REST Consumer server certificate are checked.")
   public Boolean isRestTlsServerCertValidateDateEnabled() {
     return restTlsServerCertValidateDateEnabled;
   }
 
   public void setRestTlsServerCertValidateDateEnabled(Boolean restTlsServerCertValidateDateEnabled) {
     this.restTlsServerCertValidateDateEnabled = restTlsServerCertValidateDateEnabled;
+  }
+
+  public MsgVpn restTlsServerCertValidateNameEnabled(Boolean restTlsServerCertValidateNameEnabled) {
+    this.restTlsServerCertValidateNameEnabled = restTlsServerCertValidateNameEnabled;
+    return this;
+  }
+
+   /**
+   * Enable or disable the TLS authentication mechanism of verifying the name used to connect to the remote REST Consumer. If enabled, the name used to connect to the remote REST Consumer is checked against the names specified in the certificate returned by the remote router. Common Name validation is not performed if Server Certificate Name Validation is enabled, even if Common Name validation is also enabled. Available since 2.17.
+   * @return restTlsServerCertValidateNameEnabled
+  **/
+  @Schema(description = "Enable or disable the TLS authentication mechanism of verifying the name used to connect to the remote REST Consumer. If enabled, the name used to connect to the remote REST Consumer is checked against the names specified in the certificate returned by the remote router. Common Name validation is not performed if Server Certificate Name Validation is enabled, even if Common Name validation is also enabled. Available since 2.17.")
+  public Boolean isRestTlsServerCertValidateNameEnabled() {
+    return restTlsServerCertValidateNameEnabled;
+  }
+
+  public void setRestTlsServerCertValidateNameEnabled(Boolean restTlsServerCertValidateNameEnabled) {
+    this.restTlsServerCertValidateNameEnabled = restTlsServerCertValidateNameEnabled;
   }
 
   public MsgVpn rxByteCount(Long rxByteCount) {
@@ -3848,7 +3736,7 @@ public class MsgVpn {
    * The amount of messages received from clients by the Message VPN, in bytes (B). Available since 2.12.
    * @return rxByteCount
   **/
-  @ApiModelProperty(value = "The amount of messages received from clients by the Message VPN, in bytes (B). Available since 2.12.")
+  @Schema(description = "The amount of messages received from clients by the Message VPN, in bytes (B). Available since 2.12.")
   public Long getRxByteCount() {
     return rxByteCount;
   }
@@ -3866,7 +3754,7 @@ public class MsgVpn {
    * The current message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.
    * @return rxByteRate
   **/
-  @ApiModelProperty(value = "The current message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
+  @Schema(description = "The current message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
   public Long getRxByteRate() {
     return rxByteRate;
   }
@@ -3884,7 +3772,7 @@ public class MsgVpn {
    * The amount of compressed messages received by the Message VPN, in bytes (B). Available since 2.12.
    * @return rxCompressedByteCount
   **/
-  @ApiModelProperty(value = "The amount of compressed messages received by the Message VPN, in bytes (B). Available since 2.12.")
+  @Schema(description = "The amount of compressed messages received by the Message VPN, in bytes (B). Available since 2.12.")
   public Long getRxCompressedByteCount() {
     return rxCompressedByteCount;
   }
@@ -3902,7 +3790,7 @@ public class MsgVpn {
    * The current compressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.
    * @return rxCompressedByteRate
   **/
-  @ApiModelProperty(value = "The current compressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
+  @Schema(description = "The current compressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
   public Long getRxCompressedByteRate() {
     return rxCompressedByteRate;
   }
@@ -3920,7 +3808,7 @@ public class MsgVpn {
    * The compression ratio for messages received by the message VPN. Available since 2.12.
    * @return rxCompressionRatio
   **/
-  @ApiModelProperty(value = "The compression ratio for messages received by the message VPN. Available since 2.12.")
+  @Schema(description = "The compression ratio for messages received by the message VPN. Available since 2.12.")
   public String getRxCompressionRatio() {
     return rxCompressionRatio;
   }
@@ -3938,7 +3826,7 @@ public class MsgVpn {
    * The number of messages received from clients by the Message VPN. Available since 2.12.
    * @return rxMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages received from clients by the Message VPN. Available since 2.12.")
+  @Schema(description = "The number of messages received from clients by the Message VPN. Available since 2.12.")
   public Long getRxMsgCount() {
     return rxMsgCount;
   }
@@ -3956,7 +3844,7 @@ public class MsgVpn {
    * The current message rate received by the Message VPN, in messages per second (msg/sec). Available since 2.13.
    * @return rxMsgRate
   **/
-  @ApiModelProperty(value = "The current message rate received by the Message VPN, in messages per second (msg/sec). Available since 2.13.")
+  @Schema(description = "The current message rate received by the Message VPN, in messages per second (msg/sec). Available since 2.13.")
   public Long getRxMsgRate() {
     return rxMsgRate;
   }
@@ -3974,7 +3862,7 @@ public class MsgVpn {
    * The amount of uncompressed messages received by the Message VPN, in bytes (B). Available since 2.12.
    * @return rxUncompressedByteCount
   **/
-  @ApiModelProperty(value = "The amount of uncompressed messages received by the Message VPN, in bytes (B). Available since 2.12.")
+  @Schema(description = "The amount of uncompressed messages received by the Message VPN, in bytes (B). Available since 2.12.")
   public Long getRxUncompressedByteCount() {
     return rxUncompressedByteCount;
   }
@@ -3992,7 +3880,7 @@ public class MsgVpn {
    * The current uncompressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.
    * @return rxUncompressedByteRate
   **/
-  @ApiModelProperty(value = "The current uncompressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
+  @Schema(description = "The current uncompressed message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
   public Long getRxUncompressedByteRate() {
     return rxUncompressedByteRate;
   }
@@ -4010,7 +3898,7 @@ public class MsgVpn {
    * Indicates whether the \&quot;admin\&quot; level \&quot;client\&quot; commands are enabled for SEMP over the message bus in the Message VPN.
    * @return sempOverMsgBusAdminClientEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the \"admin\" level \"client\" commands are enabled for SEMP over the message bus in the Message VPN.")
+  @Schema(description = "Indicates whether the \"admin\" level \"client\" commands are enabled for SEMP over the message bus in the Message VPN.")
   public Boolean isSempOverMsgBusAdminClientEnabled() {
     return sempOverMsgBusAdminClientEnabled;
   }
@@ -4028,7 +3916,7 @@ public class MsgVpn {
    * Indicates whether the \&quot;admin\&quot; level \&quot;Distributed Cache\&quot; commands are enabled for SEMP over the message bus in the Message VPN.
    * @return sempOverMsgBusAdminDistributedCacheEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the \"admin\" level \"Distributed Cache\" commands are enabled for SEMP over the message bus in the Message VPN.")
+  @Schema(description = "Indicates whether the \"admin\" level \"Distributed Cache\" commands are enabled for SEMP over the message bus in the Message VPN.")
   public Boolean isSempOverMsgBusAdminDistributedCacheEnabled() {
     return sempOverMsgBusAdminDistributedCacheEnabled;
   }
@@ -4046,7 +3934,7 @@ public class MsgVpn {
    * Indicates whether the \&quot;admin\&quot; level commands are enabled for SEMP over the message bus in the Message VPN.
    * @return sempOverMsgBusAdminEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the \"admin\" level commands are enabled for SEMP over the message bus in the Message VPN.")
+  @Schema(description = "Indicates whether the \"admin\" level commands are enabled for SEMP over the message bus in the Message VPN.")
   public Boolean isSempOverMsgBusAdminEnabled() {
     return sempOverMsgBusAdminEnabled;
   }
@@ -4064,31 +3952,13 @@ public class MsgVpn {
    * Indicates whether SEMP over the message bus is enabled in the Message VPN.
    * @return sempOverMsgBusEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether SEMP over the message bus is enabled in the Message VPN.")
+  @Schema(description = "Indicates whether SEMP over the message bus is enabled in the Message VPN.")
   public Boolean isSempOverMsgBusEnabled() {
     return sempOverMsgBusEnabled;
   }
 
   public void setSempOverMsgBusEnabled(Boolean sempOverMsgBusEnabled) {
     this.sempOverMsgBusEnabled = sempOverMsgBusEnabled;
-  }
-
-  public MsgVpn sempOverMsgBusLegacyShowClearEnabled(Boolean sempOverMsgBusLegacyShowClearEnabled) {
-    this.sempOverMsgBusLegacyShowClearEnabled = sempOverMsgBusLegacyShowClearEnabled;
-    return this;
-  }
-
-   /**
-   * Indicates whether \&quot;legacy-show-clear\&quot; SEMP over the message bus commands (that is, SEMP show and administration requests published to the topic \&quot;#P2P/[router name]/#client/SEMP\&quot;) are enabled for the current Message VPN.
-   * @return sempOverMsgBusLegacyShowClearEnabled
-  **/
-  @ApiModelProperty(value = "Indicates whether \"legacy-show-clear\" SEMP over the message bus commands (that is, SEMP show and administration requests published to the topic \"#P2P/[router name]/#client/SEMP\") are enabled for the current Message VPN.")
-  public Boolean isSempOverMsgBusLegacyShowClearEnabled() {
-    return sempOverMsgBusLegacyShowClearEnabled;
-  }
-
-  public void setSempOverMsgBusLegacyShowClearEnabled(Boolean sempOverMsgBusLegacyShowClearEnabled) {
-    this.sempOverMsgBusLegacyShowClearEnabled = sempOverMsgBusLegacyShowClearEnabled;
   }
 
   public MsgVpn sempOverMsgBusShowEnabled(Boolean sempOverMsgBusShowEnabled) {
@@ -4100,7 +3970,7 @@ public class MsgVpn {
    * Indicates whether the \&quot;show\&quot; level commands are enabled for SEMP over the message bus in the Message VPN.
    * @return sempOverMsgBusShowEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the \"show\" level commands are enabled for SEMP over the message bus in the Message VPN.")
+  @Schema(description = "Indicates whether the \"show\" level commands are enabled for SEMP over the message bus in the Message VPN.")
   public Boolean isSempOverMsgBusShowEnabled() {
     return sempOverMsgBusShowEnabled;
   }
@@ -4118,7 +3988,7 @@ public class MsgVpn {
    * The maximum number of AMQP client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.
    * @return serviceAmqpMaxConnectionCount
   **/
-  @ApiModelProperty(value = "The maximum number of AMQP client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.")
+  @Schema(description = "The maximum number of AMQP client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.")
   public Long getServiceAmqpMaxConnectionCount() {
     return serviceAmqpMaxConnectionCount;
   }
@@ -4136,7 +4006,7 @@ public class MsgVpn {
    * Indicates whether the AMQP Service is compressed in the Message VPN.
    * @return serviceAmqpPlainTextCompressed
   **/
-  @ApiModelProperty(value = "Indicates whether the AMQP Service is compressed in the Message VPN.")
+  @Schema(description = "Indicates whether the AMQP Service is compressed in the Message VPN.")
   public Boolean isServiceAmqpPlainTextCompressed() {
     return serviceAmqpPlainTextCompressed;
   }
@@ -4154,7 +4024,7 @@ public class MsgVpn {
    * Indicates whether the AMQP Service is enabled in the Message VPN.
    * @return serviceAmqpPlainTextEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the AMQP Service is enabled in the Message VPN.")
+  @Schema(description = "Indicates whether the AMQP Service is enabled in the Message VPN.")
   public Boolean isServiceAmqpPlainTextEnabled() {
     return serviceAmqpPlainTextEnabled;
   }
@@ -4172,7 +4042,7 @@ public class MsgVpn {
    * The reason for the AMQP Service failure in the Message VPN.
    * @return serviceAmqpPlainTextFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the AMQP Service failure in the Message VPN.")
+  @Schema(description = "The reason for the AMQP Service failure in the Message VPN.")
   public String getServiceAmqpPlainTextFailureReason() {
     return serviceAmqpPlainTextFailureReason;
   }
@@ -4190,7 +4060,7 @@ public class MsgVpn {
    * The port number for plain-text AMQP clients that connect to the Message VPN. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.
    * @return serviceAmqpPlainTextListenPort
   **/
-  @ApiModelProperty(value = "The port number for plain-text AMQP clients that connect to the Message VPN. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
+  @Schema(description = "The port number for plain-text AMQP clients that connect to the Message VPN. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
   public Long getServiceAmqpPlainTextListenPort() {
     return serviceAmqpPlainTextListenPort;
   }
@@ -4208,7 +4078,7 @@ public class MsgVpn {
    * Indicates whether the AMQP Service is operationally up in the Message VPN.
    * @return serviceAmqpPlainTextUp
   **/
-  @ApiModelProperty(value = "Indicates whether the AMQP Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the AMQP Service is operationally up in the Message VPN.")
   public Boolean isServiceAmqpPlainTextUp() {
     return serviceAmqpPlainTextUp;
   }
@@ -4226,7 +4096,7 @@ public class MsgVpn {
    * Indicates whether the TLS related AMQP Service is compressed in the Message VPN.
    * @return serviceAmqpTlsCompressed
   **/
-  @ApiModelProperty(value = "Indicates whether the TLS related AMQP Service is compressed in the Message VPN.")
+  @Schema(description = "Indicates whether the TLS related AMQP Service is compressed in the Message VPN.")
   public Boolean isServiceAmqpTlsCompressed() {
     return serviceAmqpTlsCompressed;
   }
@@ -4244,7 +4114,7 @@ public class MsgVpn {
    * Indicates whether encryption (TLS) is enabled for AMQP clients in the Message VPN.
    * @return serviceAmqpTlsEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether encryption (TLS) is enabled for AMQP clients in the Message VPN.")
+  @Schema(description = "Indicates whether encryption (TLS) is enabled for AMQP clients in the Message VPN.")
   public Boolean isServiceAmqpTlsEnabled() {
     return serviceAmqpTlsEnabled;
   }
@@ -4262,7 +4132,7 @@ public class MsgVpn {
    * The reason for the TLS related AMQP Service failure in the Message VPN.
    * @return serviceAmqpTlsFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the TLS related AMQP Service failure in the Message VPN.")
+  @Schema(description = "The reason for the TLS related AMQP Service failure in the Message VPN.")
   public String getServiceAmqpTlsFailureReason() {
     return serviceAmqpTlsFailureReason;
   }
@@ -4280,7 +4150,7 @@ public class MsgVpn {
    * The port number for AMQP clients that connect to the Message VPN over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.
    * @return serviceAmqpTlsListenPort
   **/
-  @ApiModelProperty(value = "The port number for AMQP clients that connect to the Message VPN over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
+  @Schema(description = "The port number for AMQP clients that connect to the Message VPN over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
   public Long getServiceAmqpTlsListenPort() {
     return serviceAmqpTlsListenPort;
   }
@@ -4298,7 +4168,7 @@ public class MsgVpn {
    * Indicates whether the TLS related AMQP Service is operationally up in the Message VPN.
    * @return serviceAmqpTlsUp
   **/
-  @ApiModelProperty(value = "Indicates whether the TLS related AMQP Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the TLS related AMQP Service is operationally up in the Message VPN.")
   public Boolean isServiceAmqpTlsUp() {
     return serviceAmqpTlsUp;
   }
@@ -4316,7 +4186,7 @@ public class MsgVpn {
    * The maximum number of MQTT client connections that can be simultaneously connected to the Message VPN.
    * @return serviceMqttMaxConnectionCount
   **/
-  @ApiModelProperty(value = "The maximum number of MQTT client connections that can be simultaneously connected to the Message VPN.")
+  @Schema(description = "The maximum number of MQTT client connections that can be simultaneously connected to the Message VPN.")
   public Long getServiceMqttMaxConnectionCount() {
     return serviceMqttMaxConnectionCount;
   }
@@ -4334,7 +4204,7 @@ public class MsgVpn {
    * Indicates whether the MQTT Service is compressed in the Message VPN.
    * @return serviceMqttPlainTextCompressed
   **/
-  @ApiModelProperty(value = "Indicates whether the MQTT Service is compressed in the Message VPN.")
+  @Schema(description = "Indicates whether the MQTT Service is compressed in the Message VPN.")
   public Boolean isServiceMqttPlainTextCompressed() {
     return serviceMqttPlainTextCompressed;
   }
@@ -4352,7 +4222,7 @@ public class MsgVpn {
    * Indicates whether the MQTT Service is enabled in the Message VPN.
    * @return serviceMqttPlainTextEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the MQTT Service is enabled in the Message VPN.")
+  @Schema(description = "Indicates whether the MQTT Service is enabled in the Message VPN.")
   public Boolean isServiceMqttPlainTextEnabled() {
     return serviceMqttPlainTextEnabled;
   }
@@ -4370,7 +4240,7 @@ public class MsgVpn {
    * The reason for the MQTT Service failure in the Message VPN.
    * @return serviceMqttPlainTextFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the MQTT Service failure in the Message VPN.")
+  @Schema(description = "The reason for the MQTT Service failure in the Message VPN.")
   public String getServiceMqttPlainTextFailureReason() {
     return serviceMqttPlainTextFailureReason;
   }
@@ -4388,7 +4258,7 @@ public class MsgVpn {
    * The port number for plain-text MQTT clients that connect to the Message VPN. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.
    * @return serviceMqttPlainTextListenPort
   **/
-  @ApiModelProperty(value = "The port number for plain-text MQTT clients that connect to the Message VPN. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
+  @Schema(description = "The port number for plain-text MQTT clients that connect to the Message VPN. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
   public Long getServiceMqttPlainTextListenPort() {
     return serviceMqttPlainTextListenPort;
   }
@@ -4406,7 +4276,7 @@ public class MsgVpn {
    * Indicates whether the MQTT Service is operationally up in the Message VPN.
    * @return serviceMqttPlainTextUp
   **/
-  @ApiModelProperty(value = "Indicates whether the MQTT Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the MQTT Service is operationally up in the Message VPN.")
   public Boolean isServiceMqttPlainTextUp() {
     return serviceMqttPlainTextUp;
   }
@@ -4424,7 +4294,7 @@ public class MsgVpn {
    * Indicates whether the TLS related MQTT Service is compressed in the Message VPN.
    * @return serviceMqttTlsCompressed
   **/
-  @ApiModelProperty(value = "Indicates whether the TLS related MQTT Service is compressed in the Message VPN.")
+  @Schema(description = "Indicates whether the TLS related MQTT Service is compressed in the Message VPN.")
   public Boolean isServiceMqttTlsCompressed() {
     return serviceMqttTlsCompressed;
   }
@@ -4442,7 +4312,7 @@ public class MsgVpn {
    * Indicates whether encryption (TLS) is enabled for MQTT clients in the Message VPN.
    * @return serviceMqttTlsEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether encryption (TLS) is enabled for MQTT clients in the Message VPN.")
+  @Schema(description = "Indicates whether encryption (TLS) is enabled for MQTT clients in the Message VPN.")
   public Boolean isServiceMqttTlsEnabled() {
     return serviceMqttTlsEnabled;
   }
@@ -4460,7 +4330,7 @@ public class MsgVpn {
    * The reason for the TLS related MQTT Service failure in the Message VPN.
    * @return serviceMqttTlsFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the TLS related MQTT Service failure in the Message VPN.")
+  @Schema(description = "The reason for the TLS related MQTT Service failure in the Message VPN.")
   public String getServiceMqttTlsFailureReason() {
     return serviceMqttTlsFailureReason;
   }
@@ -4478,7 +4348,7 @@ public class MsgVpn {
    * The port number for MQTT clients that connect to the Message VPN over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.
    * @return serviceMqttTlsListenPort
   **/
-  @ApiModelProperty(value = "The port number for MQTT clients that connect to the Message VPN over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
+  @Schema(description = "The port number for MQTT clients that connect to the Message VPN over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
   public Long getServiceMqttTlsListenPort() {
     return serviceMqttTlsListenPort;
   }
@@ -4496,7 +4366,7 @@ public class MsgVpn {
    * Indicates whether the TLS related MQTT Service is operationally up in the Message VPN.
    * @return serviceMqttTlsUp
   **/
-  @ApiModelProperty(value = "Indicates whether the TLS related MQTT Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the TLS related MQTT Service is operationally up in the Message VPN.")
   public Boolean isServiceMqttTlsUp() {
     return serviceMqttTlsUp;
   }
@@ -4514,7 +4384,7 @@ public class MsgVpn {
    * Indicates whether the TLS related Web transport MQTT Service is compressed in the Message VPN.
    * @return serviceMqttTlsWebSocketCompressed
   **/
-  @ApiModelProperty(value = "Indicates whether the TLS related Web transport MQTT Service is compressed in the Message VPN.")
+  @Schema(description = "Indicates whether the TLS related Web transport MQTT Service is compressed in the Message VPN.")
   public Boolean isServiceMqttTlsWebSocketCompressed() {
     return serviceMqttTlsWebSocketCompressed;
   }
@@ -4532,7 +4402,7 @@ public class MsgVpn {
    * Indicates whether encryption (TLS) is enabled for MQTT Web clients in the Message VPN.
    * @return serviceMqttTlsWebSocketEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether encryption (TLS) is enabled for MQTT Web clients in the Message VPN.")
+  @Schema(description = "Indicates whether encryption (TLS) is enabled for MQTT Web clients in the Message VPN.")
   public Boolean isServiceMqttTlsWebSocketEnabled() {
     return serviceMqttTlsWebSocketEnabled;
   }
@@ -4550,7 +4420,7 @@ public class MsgVpn {
    * The reason for the TLS related Web transport MQTT Service failure in the Message VPN.
    * @return serviceMqttTlsWebSocketFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the TLS related Web transport MQTT Service failure in the Message VPN.")
+  @Schema(description = "The reason for the TLS related Web transport MQTT Service failure in the Message VPN.")
   public String getServiceMqttTlsWebSocketFailureReason() {
     return serviceMqttTlsWebSocketFailureReason;
   }
@@ -4568,7 +4438,7 @@ public class MsgVpn {
    * The port number for MQTT clients that connect to the Message VPN using WebSocket over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.
    * @return serviceMqttTlsWebSocketListenPort
   **/
-  @ApiModelProperty(value = "The port number for MQTT clients that connect to the Message VPN using WebSocket over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
+  @Schema(description = "The port number for MQTT clients that connect to the Message VPN using WebSocket over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
   public Long getServiceMqttTlsWebSocketListenPort() {
     return serviceMqttTlsWebSocketListenPort;
   }
@@ -4586,7 +4456,7 @@ public class MsgVpn {
    * Indicates whether the TLS related Web transport MQTT Service is operationally up in the Message VPN.
    * @return serviceMqttTlsWebSocketUp
   **/
-  @ApiModelProperty(value = "Indicates whether the TLS related Web transport MQTT Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the TLS related Web transport MQTT Service is operationally up in the Message VPN.")
   public Boolean isServiceMqttTlsWebSocketUp() {
     return serviceMqttTlsWebSocketUp;
   }
@@ -4604,7 +4474,7 @@ public class MsgVpn {
    * Indicates whether the Web transport related MQTT Service is compressed in the Message VPN.
    * @return serviceMqttWebSocketCompressed
   **/
-  @ApiModelProperty(value = "Indicates whether the Web transport related MQTT Service is compressed in the Message VPN.")
+  @Schema(description = "Indicates whether the Web transport related MQTT Service is compressed in the Message VPN.")
   public Boolean isServiceMqttWebSocketCompressed() {
     return serviceMqttWebSocketCompressed;
   }
@@ -4622,7 +4492,7 @@ public class MsgVpn {
    * Indicates whether the Web transport for the SMF Service is enabled in the Message VPN.
    * @return serviceMqttWebSocketEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the Web transport for the SMF Service is enabled in the Message VPN.")
+  @Schema(description = "Indicates whether the Web transport for the SMF Service is enabled in the Message VPN.")
   public Boolean isServiceMqttWebSocketEnabled() {
     return serviceMqttWebSocketEnabled;
   }
@@ -4640,7 +4510,7 @@ public class MsgVpn {
    * The reason for the Web transport related MQTT Service failure in the Message VPN.
    * @return serviceMqttWebSocketFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the Web transport related MQTT Service failure in the Message VPN.")
+  @Schema(description = "The reason for the Web transport related MQTT Service failure in the Message VPN.")
   public String getServiceMqttWebSocketFailureReason() {
     return serviceMqttWebSocketFailureReason;
   }
@@ -4658,7 +4528,7 @@ public class MsgVpn {
    * The port number for plain-text MQTT clients that connect to the Message VPN using WebSocket. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.
    * @return serviceMqttWebSocketListenPort
   **/
-  @ApiModelProperty(value = "The port number for plain-text MQTT clients that connect to the Message VPN using WebSocket. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
+  @Schema(description = "The port number for plain-text MQTT clients that connect to the Message VPN using WebSocket. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
   public Long getServiceMqttWebSocketListenPort() {
     return serviceMqttWebSocketListenPort;
   }
@@ -4676,7 +4546,7 @@ public class MsgVpn {
    * Indicates whether the Web transport related MQTT Service is operationally up in the Message VPN.
    * @return serviceMqttWebSocketUp
   **/
-  @ApiModelProperty(value = "Indicates whether the Web transport related MQTT Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the Web transport related MQTT Service is operationally up in the Message VPN.")
   public Boolean isServiceMqttWebSocketUp() {
     return serviceMqttWebSocketUp;
   }
@@ -4694,7 +4564,7 @@ public class MsgVpn {
    * The maximum number of REST incoming client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.
    * @return serviceRestIncomingMaxConnectionCount
   **/
-  @ApiModelProperty(value = "The maximum number of REST incoming client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.")
+  @Schema(description = "The maximum number of REST incoming client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.")
   public Long getServiceRestIncomingMaxConnectionCount() {
     return serviceRestIncomingMaxConnectionCount;
   }
@@ -4712,7 +4582,7 @@ public class MsgVpn {
    * Indicates whether the incoming REST Service is compressed in the Message VPN.
    * @return serviceRestIncomingPlainTextCompressed
   **/
-  @ApiModelProperty(value = "Indicates whether the incoming REST Service is compressed in the Message VPN.")
+  @Schema(description = "Indicates whether the incoming REST Service is compressed in the Message VPN.")
   public Boolean isServiceRestIncomingPlainTextCompressed() {
     return serviceRestIncomingPlainTextCompressed;
   }
@@ -4730,7 +4600,7 @@ public class MsgVpn {
    * Indicates whether the REST Service is enabled in the Message VPN for incoming clients.
    * @return serviceRestIncomingPlainTextEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the REST Service is enabled in the Message VPN for incoming clients.")
+  @Schema(description = "Indicates whether the REST Service is enabled in the Message VPN for incoming clients.")
   public Boolean isServiceRestIncomingPlainTextEnabled() {
     return serviceRestIncomingPlainTextEnabled;
   }
@@ -4748,7 +4618,7 @@ public class MsgVpn {
    * The reason for the incoming REST Service failure in the Message VPN.
    * @return serviceRestIncomingPlainTextFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the incoming REST Service failure in the Message VPN.")
+  @Schema(description = "The reason for the incoming REST Service failure in the Message VPN.")
   public String getServiceRestIncomingPlainTextFailureReason() {
     return serviceRestIncomingPlainTextFailureReason;
   }
@@ -4766,7 +4636,7 @@ public class MsgVpn {
    * The port number for incoming plain-text REST clients that connect to the Message VPN. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.
    * @return serviceRestIncomingPlainTextListenPort
   **/
-  @ApiModelProperty(value = "The port number for incoming plain-text REST clients that connect to the Message VPN. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
+  @Schema(description = "The port number for incoming plain-text REST clients that connect to the Message VPN. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
   public Long getServiceRestIncomingPlainTextListenPort() {
     return serviceRestIncomingPlainTextListenPort;
   }
@@ -4784,7 +4654,7 @@ public class MsgVpn {
    * Indicates whether the incoming REST Service is operationally up in the Message VPN.
    * @return serviceRestIncomingPlainTextUp
   **/
-  @ApiModelProperty(value = "Indicates whether the incoming REST Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the incoming REST Service is operationally up in the Message VPN.")
   public Boolean isServiceRestIncomingPlainTextUp() {
     return serviceRestIncomingPlainTextUp;
   }
@@ -4802,7 +4672,7 @@ public class MsgVpn {
    * Indicates whether the TLS related incoming REST Service is compressed in the Message VPN.
    * @return serviceRestIncomingTlsCompressed
   **/
-  @ApiModelProperty(value = "Indicates whether the TLS related incoming REST Service is compressed in the Message VPN.")
+  @Schema(description = "Indicates whether the TLS related incoming REST Service is compressed in the Message VPN.")
   public Boolean isServiceRestIncomingTlsCompressed() {
     return serviceRestIncomingTlsCompressed;
   }
@@ -4820,7 +4690,7 @@ public class MsgVpn {
    * Indicates whether encryption (TLS) is enabled for incoming REST clients in the Message VPN.
    * @return serviceRestIncomingTlsEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether encryption (TLS) is enabled for incoming REST clients in the Message VPN.")
+  @Schema(description = "Indicates whether encryption (TLS) is enabled for incoming REST clients in the Message VPN.")
   public Boolean isServiceRestIncomingTlsEnabled() {
     return serviceRestIncomingTlsEnabled;
   }
@@ -4838,7 +4708,7 @@ public class MsgVpn {
    * The reason for the TLS related incoming REST Service failure in the Message VPN.
    * @return serviceRestIncomingTlsFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the TLS related incoming REST Service failure in the Message VPN.")
+  @Schema(description = "The reason for the TLS related incoming REST Service failure in the Message VPN.")
   public String getServiceRestIncomingTlsFailureReason() {
     return serviceRestIncomingTlsFailureReason;
   }
@@ -4856,7 +4726,7 @@ public class MsgVpn {
    * The port number for incoming REST clients that connect to the Message VPN over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.
    * @return serviceRestIncomingTlsListenPort
   **/
-  @ApiModelProperty(value = "The port number for incoming REST clients that connect to the Message VPN over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
+  @Schema(description = "The port number for incoming REST clients that connect to the Message VPN over TLS. The port must be unique across the message backbone. A value of 0 means that the listen-port is unassigned and cannot be enabled.")
   public Long getServiceRestIncomingTlsListenPort() {
     return serviceRestIncomingTlsListenPort;
   }
@@ -4874,7 +4744,7 @@ public class MsgVpn {
    * Indicates whether the TLS related incoming REST Service is operationally up in the Message VPN.
    * @return serviceRestIncomingTlsUp
   **/
-  @ApiModelProperty(value = "Indicates whether the TLS related incoming REST Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the TLS related incoming REST Service is operationally up in the Message VPN.")
   public Boolean isServiceRestIncomingTlsUp() {
     return serviceRestIncomingTlsUp;
   }
@@ -4892,7 +4762,7 @@ public class MsgVpn {
    * The REST service mode for incoming REST clients that connect to the Message VPN. The allowed values and their meaning are:  &lt;pre&gt; \&quot;gateway\&quot; - Act as a message gateway through which REST messages are propagated. \&quot;messaging\&quot; - Act as a message broker on which REST messages are queued. &lt;/pre&gt; 
    * @return serviceRestMode
   **/
-  @ApiModelProperty(value = "The REST service mode for incoming REST clients that connect to the Message VPN. The allowed values and their meaning are:  <pre> \"gateway\" - Act as a message gateway through which REST messages are propagated. \"messaging\" - Act as a message broker on which REST messages are queued. </pre> ")
+  @Schema(description = "The REST service mode for incoming REST clients that connect to the Message VPN. The allowed values and their meaning are:  <pre> \"gateway\" - Act as a message gateway through which REST messages are propagated. \"messaging\" - Act as a message broker on which REST messages are queued. </pre> ")
   public ServiceRestModeEnum getServiceRestMode() {
     return serviceRestMode;
   }
@@ -4910,7 +4780,7 @@ public class MsgVpn {
    * The maximum number of REST Consumer (outgoing) client connections that can be simultaneously connected to the Message VPN.
    * @return serviceRestOutgoingMaxConnectionCount
   **/
-  @ApiModelProperty(value = "The maximum number of REST Consumer (outgoing) client connections that can be simultaneously connected to the Message VPN.")
+  @Schema(description = "The maximum number of REST Consumer (outgoing) client connections that can be simultaneously connected to the Message VPN.")
   public Long getServiceRestOutgoingMaxConnectionCount() {
     return serviceRestOutgoingMaxConnectionCount;
   }
@@ -4928,7 +4798,7 @@ public class MsgVpn {
    * The maximum number of SMF client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.
    * @return serviceSmfMaxConnectionCount
   **/
-  @ApiModelProperty(value = "The maximum number of SMF client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.")
+  @Schema(description = "The maximum number of SMF client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.")
   public Long getServiceSmfMaxConnectionCount() {
     return serviceSmfMaxConnectionCount;
   }
@@ -4946,7 +4816,7 @@ public class MsgVpn {
    * Indicates whether the SMF Service is enabled in the Message VPN.
    * @return serviceSmfPlainTextEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the SMF Service is enabled in the Message VPN.")
+  @Schema(description = "Indicates whether the SMF Service is enabled in the Message VPN.")
   public Boolean isServiceSmfPlainTextEnabled() {
     return serviceSmfPlainTextEnabled;
   }
@@ -4964,7 +4834,7 @@ public class MsgVpn {
    * The reason for the SMF Service failure in the Message VPN.
    * @return serviceSmfPlainTextFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the SMF Service failure in the Message VPN.")
+  @Schema(description = "The reason for the SMF Service failure in the Message VPN.")
   public String getServiceSmfPlainTextFailureReason() {
     return serviceSmfPlainTextFailureReason;
   }
@@ -4982,7 +4852,7 @@ public class MsgVpn {
    * Indicates whether the SMF Service is operationally up in the Message VPN.
    * @return serviceSmfPlainTextUp
   **/
-  @ApiModelProperty(value = "Indicates whether the SMF Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the SMF Service is operationally up in the Message VPN.")
   public Boolean isServiceSmfPlainTextUp() {
     return serviceSmfPlainTextUp;
   }
@@ -5000,7 +4870,7 @@ public class MsgVpn {
    * Indicates whether encryption (TLS) is enabled for SMF clients in the Message VPN.
    * @return serviceSmfTlsEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether encryption (TLS) is enabled for SMF clients in the Message VPN.")
+  @Schema(description = "Indicates whether encryption (TLS) is enabled for SMF clients in the Message VPN.")
   public Boolean isServiceSmfTlsEnabled() {
     return serviceSmfTlsEnabled;
   }
@@ -5018,7 +4888,7 @@ public class MsgVpn {
    * The reason for the TLS related SMF Service failure in the Message VPN.
    * @return serviceSmfTlsFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the TLS related SMF Service failure in the Message VPN.")
+  @Schema(description = "The reason for the TLS related SMF Service failure in the Message VPN.")
   public String getServiceSmfTlsFailureReason() {
     return serviceSmfTlsFailureReason;
   }
@@ -5036,7 +4906,7 @@ public class MsgVpn {
    * Indicates whether the TLS related SMF Service is operationally up in the Message VPN.
    * @return serviceSmfTlsUp
   **/
-  @ApiModelProperty(value = "Indicates whether the TLS related SMF Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the TLS related SMF Service is operationally up in the Message VPN.")
   public Boolean isServiceSmfTlsUp() {
     return serviceSmfTlsUp;
   }
@@ -5054,7 +4924,7 @@ public class MsgVpn {
    * The maximum number of Web Transport client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.
    * @return serviceWebMaxConnectionCount
   **/
-  @ApiModelProperty(value = "The maximum number of Web Transport client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.")
+  @Schema(description = "The maximum number of Web Transport client connections that can be simultaneously connected to the Message VPN. This value may be higher than supported by the platform.")
   public Long getServiceWebMaxConnectionCount() {
     return serviceWebMaxConnectionCount;
   }
@@ -5072,7 +4942,7 @@ public class MsgVpn {
    * Indicates whether the Web transport for the SMF Service is enabled in the Message VPN.
    * @return serviceWebPlainTextEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether the Web transport for the SMF Service is enabled in the Message VPN.")
+  @Schema(description = "Indicates whether the Web transport for the SMF Service is enabled in the Message VPN.")
   public Boolean isServiceWebPlainTextEnabled() {
     return serviceWebPlainTextEnabled;
   }
@@ -5090,7 +4960,7 @@ public class MsgVpn {
    * The reason for the Web transport related SMF Service failure in the Message VPN.
    * @return serviceWebPlainTextFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the Web transport related SMF Service failure in the Message VPN.")
+  @Schema(description = "The reason for the Web transport related SMF Service failure in the Message VPN.")
   public String getServiceWebPlainTextFailureReason() {
     return serviceWebPlainTextFailureReason;
   }
@@ -5108,7 +4978,7 @@ public class MsgVpn {
    * Indicates whether the Web transport for the SMF Service is operationally up in the Message VPN.
    * @return serviceWebPlainTextUp
   **/
-  @ApiModelProperty(value = "Indicates whether the Web transport for the SMF Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the Web transport for the SMF Service is operationally up in the Message VPN.")
   public Boolean isServiceWebPlainTextUp() {
     return serviceWebPlainTextUp;
   }
@@ -5126,7 +4996,7 @@ public class MsgVpn {
    * Indicates whether TLS is enabled for SMF clients in the Message VPN that use the Web transport.
    * @return serviceWebTlsEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether TLS is enabled for SMF clients in the Message VPN that use the Web transport.")
+  @Schema(description = "Indicates whether TLS is enabled for SMF clients in the Message VPN that use the Web transport.")
   public Boolean isServiceWebTlsEnabled() {
     return serviceWebTlsEnabled;
   }
@@ -5144,7 +5014,7 @@ public class MsgVpn {
    * The reason for the TLS related Web transport SMF Service failure in the Message VPN.
    * @return serviceWebTlsFailureReason
   **/
-  @ApiModelProperty(value = "The reason for the TLS related Web transport SMF Service failure in the Message VPN.")
+  @Schema(description = "The reason for the TLS related Web transport SMF Service failure in the Message VPN.")
   public String getServiceWebTlsFailureReason() {
     return serviceWebTlsFailureReason;
   }
@@ -5162,7 +5032,7 @@ public class MsgVpn {
    * Indicates whether the TLS related Web transport SMF Service is operationally up in the Message VPN.
    * @return serviceWebTlsUp
   **/
-  @ApiModelProperty(value = "Indicates whether the TLS related Web transport SMF Service is operationally up in the Message VPN.")
+  @Schema(description = "Indicates whether the TLS related Web transport SMF Service is operationally up in the Message VPN.")
   public Boolean isServiceWebTlsUp() {
     return serviceWebTlsUp;
   }
@@ -5180,7 +5050,7 @@ public class MsgVpn {
    * The operational state of the local Message VPN. The allowed values and their meaning are:  &lt;pre&gt; \&quot;up\&quot; - The Message VPN is operationally up. \&quot;down\&quot; - The Message VPN is operationally down. \&quot;standby\&quot; - The Message VPN is operationally replication standby. &lt;/pre&gt; 
    * @return state
   **/
-  @ApiModelProperty(value = "The operational state of the local Message VPN. The allowed values and their meaning are:  <pre> \"up\" - The Message VPN is operationally up. \"down\" - The Message VPN is operationally down. \"standby\" - The Message VPN is operationally replication standby. </pre> ")
+  @Schema(description = "The operational state of the local Message VPN. The allowed values and their meaning are:  <pre> \"up\" - The Message VPN is operationally up. \"down\" - The Message VPN is operationally down. \"standby\" - The Message VPN is operationally replication standby. </pre> ")
   public String getState() {
     return state;
   }
@@ -5198,7 +5068,7 @@ public class MsgVpn {
    * The progress of the subscription export task, in percent complete.
    * @return subscriptionExportProgress
   **/
-  @ApiModelProperty(value = "The progress of the subscription export task, in percent complete.")
+  @Schema(description = "The progress of the subscription export task, in percent complete.")
   public Long getSubscriptionExportProgress() {
     return subscriptionExportProgress;
   }
@@ -5216,7 +5086,7 @@ public class MsgVpn {
    * Indicates whether the Message VPN is the system manager for handling system level SEMP get requests and system level event publishing.
    * @return systemManager
   **/
-  @ApiModelProperty(value = "Indicates whether the Message VPN is the system manager for handling system level SEMP get requests and system level event publishing.")
+  @Schema(description = "Indicates whether the Message VPN is the system manager for handling system level SEMP get requests and system level event publishing.")
   public Boolean isSystemManager() {
     return systemManager;
   }
@@ -5234,7 +5104,7 @@ public class MsgVpn {
    * Indicates whether SMF clients connected to the Message VPN are allowed to downgrade their connections from TLS to plain text.
    * @return tlsAllowDowngradeToPlainTextEnabled
   **/
-  @ApiModelProperty(value = "Indicates whether SMF clients connected to the Message VPN are allowed to downgrade their connections from TLS to plain text.")
+  @Schema(description = "Indicates whether SMF clients connected to the Message VPN are allowed to downgrade their connections from TLS to plain text.")
   public Boolean isTlsAllowDowngradeToPlainTextEnabled() {
     return tlsAllowDowngradeToPlainTextEnabled;
   }
@@ -5252,7 +5122,7 @@ public class MsgVpn {
    * The one minute average of the TLS message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.
    * @return tlsAverageRxByteRate
   **/
-  @ApiModelProperty(value = "The one minute average of the TLS message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
+  @Schema(description = "The one minute average of the TLS message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
   public Long getTlsAverageRxByteRate() {
     return tlsAverageRxByteRate;
   }
@@ -5270,7 +5140,7 @@ public class MsgVpn {
    * The one minute average of the TLS message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.
    * @return tlsAverageTxByteRate
   **/
-  @ApiModelProperty(value = "The one minute average of the TLS message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
+  @Schema(description = "The one minute average of the TLS message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
   public Long getTlsAverageTxByteRate() {
     return tlsAverageTxByteRate;
   }
@@ -5279,7 +5149,7 @@ public class MsgVpn {
     this.tlsAverageTxByteRate = tlsAverageTxByteRate;
   }
 
-  public MsgVpn tlsRxByteCount(Integer tlsRxByteCount) {
+  public MsgVpn tlsRxByteCount(Long tlsRxByteCount) {
     this.tlsRxByteCount = tlsRxByteCount;
     return this;
   }
@@ -5288,12 +5158,12 @@ public class MsgVpn {
    * The amount of TLS messages received by the Message VPN, in bytes (B). Available since 2.13.
    * @return tlsRxByteCount
   **/
-  @ApiModelProperty(value = "The amount of TLS messages received by the Message VPN, in bytes (B). Available since 2.13.")
-  public Integer getTlsRxByteCount() {
+  @Schema(description = "The amount of TLS messages received by the Message VPN, in bytes (B). Available since 2.13.")
+  public Long getTlsRxByteCount() {
     return tlsRxByteCount;
   }
 
-  public void setTlsRxByteCount(Integer tlsRxByteCount) {
+  public void setTlsRxByteCount(Long tlsRxByteCount) {
     this.tlsRxByteCount = tlsRxByteCount;
   }
 
@@ -5306,7 +5176,7 @@ public class MsgVpn {
    * The current TLS message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.
    * @return tlsRxByteRate
   **/
-  @ApiModelProperty(value = "The current TLS message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
+  @Schema(description = "The current TLS message rate received by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
   public Long getTlsRxByteRate() {
     return tlsRxByteRate;
   }
@@ -5324,7 +5194,7 @@ public class MsgVpn {
    * The amount of TLS messages transmitted by the Message VPN, in bytes (B). Available since 2.13.
    * @return tlsTxByteCount
   **/
-  @ApiModelProperty(value = "The amount of TLS messages transmitted by the Message VPN, in bytes (B). Available since 2.13.")
+  @Schema(description = "The amount of TLS messages transmitted by the Message VPN, in bytes (B). Available since 2.13.")
   public Long getTlsTxByteCount() {
     return tlsTxByteCount;
   }
@@ -5342,7 +5212,7 @@ public class MsgVpn {
    * The current TLS message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.
    * @return tlsTxByteRate
   **/
-  @ApiModelProperty(value = "The current TLS message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
+  @Schema(description = "The current TLS message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
   public Long getTlsTxByteRate() {
     return tlsTxByteRate;
   }
@@ -5360,7 +5230,7 @@ public class MsgVpn {
    * The amount of messages transmitted to clients by the Message VPN, in bytes (B). Available since 2.12.
    * @return txByteCount
   **/
-  @ApiModelProperty(value = "The amount of messages transmitted to clients by the Message VPN, in bytes (B). Available since 2.12.")
+  @Schema(description = "The amount of messages transmitted to clients by the Message VPN, in bytes (B). Available since 2.12.")
   public Long getTxByteCount() {
     return txByteCount;
   }
@@ -5378,7 +5248,7 @@ public class MsgVpn {
    * The current message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.
    * @return txByteRate
   **/
-  @ApiModelProperty(value = "The current message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
+  @Schema(description = "The current message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.13.")
   public Long getTxByteRate() {
     return txByteRate;
   }
@@ -5396,7 +5266,7 @@ public class MsgVpn {
    * The amount of compressed messages transmitted by the Message VPN, in bytes (B). Available since 2.12.
    * @return txCompressedByteCount
   **/
-  @ApiModelProperty(value = "The amount of compressed messages transmitted by the Message VPN, in bytes (B). Available since 2.12.")
+  @Schema(description = "The amount of compressed messages transmitted by the Message VPN, in bytes (B). Available since 2.12.")
   public Long getTxCompressedByteCount() {
     return txCompressedByteCount;
   }
@@ -5414,7 +5284,7 @@ public class MsgVpn {
    * The current compressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.
    * @return txCompressedByteRate
   **/
-  @ApiModelProperty(value = "The current compressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
+  @Schema(description = "The current compressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
   public Long getTxCompressedByteRate() {
     return txCompressedByteRate;
   }
@@ -5432,7 +5302,7 @@ public class MsgVpn {
    * The compression ratio for messages transmitted by the message VPN. Available since 2.12.
    * @return txCompressionRatio
   **/
-  @ApiModelProperty(value = "The compression ratio for messages transmitted by the message VPN. Available since 2.12.")
+  @Schema(description = "The compression ratio for messages transmitted by the message VPN. Available since 2.12.")
   public String getTxCompressionRatio() {
     return txCompressionRatio;
   }
@@ -5450,7 +5320,7 @@ public class MsgVpn {
    * The number of messages transmitted to clients by the Message VPN. Available since 2.12.
    * @return txMsgCount
   **/
-  @ApiModelProperty(value = "The number of messages transmitted to clients by the Message VPN. Available since 2.12.")
+  @Schema(description = "The number of messages transmitted to clients by the Message VPN. Available since 2.12.")
   public Long getTxMsgCount() {
     return txMsgCount;
   }
@@ -5468,7 +5338,7 @@ public class MsgVpn {
    * The current message rate transmitted by the Message VPN, in messages per second (msg/sec). Available since 2.13.
    * @return txMsgRate
   **/
-  @ApiModelProperty(value = "The current message rate transmitted by the Message VPN, in messages per second (msg/sec). Available since 2.13.")
+  @Schema(description = "The current message rate transmitted by the Message VPN, in messages per second (msg/sec). Available since 2.13.")
   public Long getTxMsgRate() {
     return txMsgRate;
   }
@@ -5486,7 +5356,7 @@ public class MsgVpn {
    * The amount of uncompressed messages transmitted by the Message VPN, in bytes (B). Available since 2.12.
    * @return txUncompressedByteCount
   **/
-  @ApiModelProperty(value = "The amount of uncompressed messages transmitted by the Message VPN, in bytes (B). Available since 2.12.")
+  @Schema(description = "The amount of uncompressed messages transmitted by the Message VPN, in bytes (B). Available since 2.12.")
   public Long getTxUncompressedByteCount() {
     return txUncompressedByteCount;
   }
@@ -5504,7 +5374,7 @@ public class MsgVpn {
    * The current uncompressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.
    * @return txUncompressedByteRate
   **/
-  @ApiModelProperty(value = "The current uncompressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
+  @Schema(description = "The current uncompressed message rate transmitted by the Message VPN, in bytes per second (B/sec). Available since 2.12.")
   public Long getTxUncompressedByteRate() {
     return txUncompressedByteRate;
   }
@@ -5623,7 +5493,6 @@ public class MsgVpn {
         Objects.equals(this.msgSpoolTxMsgCount, msgVpn.msgSpoolTxMsgCount) &&
         Objects.equals(this.msgSpoolUsage, msgVpn.msgSpoolUsage) &&
         Objects.equals(this.msgVpnName, msgVpn.msgVpnName) &&
-        Objects.equals(this.preferIpVersion, msgVpn.preferIpVersion) &&
         Objects.equals(this.rate, msgVpn.rate) &&
         Objects.equals(this.replicationAckPropagationIntervalMsgCount, msgVpn.replicationAckPropagationIntervalMsgCount) &&
         Objects.equals(this.replicationActiveAckPropTxMsgCount, msgVpn.replicationActiveAckPropTxMsgCount) &&
@@ -5668,6 +5537,7 @@ public class MsgVpn {
         Objects.equals(this.restTlsServerCertEnforceTrustedCommonNameEnabled, msgVpn.restTlsServerCertEnforceTrustedCommonNameEnabled) &&
         Objects.equals(this.restTlsServerCertMaxChainDepth, msgVpn.restTlsServerCertMaxChainDepth) &&
         Objects.equals(this.restTlsServerCertValidateDateEnabled, msgVpn.restTlsServerCertValidateDateEnabled) &&
+        Objects.equals(this.restTlsServerCertValidateNameEnabled, msgVpn.restTlsServerCertValidateNameEnabled) &&
         Objects.equals(this.rxByteCount, msgVpn.rxByteCount) &&
         Objects.equals(this.rxByteRate, msgVpn.rxByteRate) &&
         Objects.equals(this.rxCompressedByteCount, msgVpn.rxCompressedByteCount) &&
@@ -5681,7 +5551,6 @@ public class MsgVpn {
         Objects.equals(this.sempOverMsgBusAdminDistributedCacheEnabled, msgVpn.sempOverMsgBusAdminDistributedCacheEnabled) &&
         Objects.equals(this.sempOverMsgBusAdminEnabled, msgVpn.sempOverMsgBusAdminEnabled) &&
         Objects.equals(this.sempOverMsgBusEnabled, msgVpn.sempOverMsgBusEnabled) &&
-        Objects.equals(this.sempOverMsgBusLegacyShowClearEnabled, msgVpn.sempOverMsgBusLegacyShowClearEnabled) &&
         Objects.equals(this.sempOverMsgBusShowEnabled, msgVpn.sempOverMsgBusShowEnabled) &&
         Objects.equals(this.serviceAmqpMaxConnectionCount, msgVpn.serviceAmqpMaxConnectionCount) &&
         Objects.equals(this.serviceAmqpPlainTextCompressed, msgVpn.serviceAmqpPlainTextCompressed) &&
@@ -5765,7 +5634,7 @@ public class MsgVpn {
 
   @Override
   public int hashCode() {
-    return Objects.hash(alias, authenticationBasicEnabled, authenticationBasicProfileName, authenticationBasicRadiusDomain, authenticationBasicType, authenticationClientCertAllowApiProvidedUsernameEnabled, authenticationClientCertEnabled, authenticationClientCertMaxChainDepth, authenticationClientCertRevocationCheckMode, authenticationClientCertUsernameSource, authenticationClientCertValidateDateEnabled, authenticationKerberosAllowApiProvidedUsernameEnabled, authenticationKerberosEnabled, authenticationOauthDefaultProviderName, authenticationOauthEnabled, authorizationLdapGroupMembershipAttributeName, authorizationLdapTrimClientUsernameDomainEnabled, authorizationProfileName, authorizationType, averageRxByteRate, averageRxCompressedByteRate, averageRxMsgRate, averageRxUncompressedByteRate, averageTxByteRate, averageTxCompressedByteRate, averageTxMsgRate, averageTxUncompressedByteRate, bridgingTlsServerCertEnforceTrustedCommonNameEnabled, bridgingTlsServerCertMaxChainDepth, bridgingTlsServerCertValidateDateEnabled, configSyncLocalKey, configSyncLocalLastResult, configSyncLocalRole, configSyncLocalState, configSyncLocalTimeInState, controlRxByteCount, controlRxMsgCount, controlTxByteCount, controlTxMsgCount, counter, dataRxByteCount, dataRxMsgCount, dataTxByteCount, dataTxMsgCount, discardedRxMsgCount, discardedTxMsgCount, distributedCacheManagementEnabled, dmrEnabled, enabled, eventConnectionCountThreshold, eventEgressFlowCountThreshold, eventEgressMsgRateThreshold, eventEndpointCountThreshold, eventIngressFlowCountThreshold, eventIngressMsgRateThreshold, eventLargeMsgThreshold, eventLogTag, eventMsgSpoolUsageThreshold, eventPublishClientEnabled, eventPublishMsgVpnEnabled, eventPublishSubscriptionMode, eventPublishTopicFormatMqttEnabled, eventPublishTopicFormatSmfEnabled, eventServiceAmqpConnectionCountThreshold, eventServiceMqttConnectionCountThreshold, eventServiceRestIncomingConnectionCountThreshold, eventServiceSmfConnectionCountThreshold, eventServiceWebConnectionCountThreshold, eventSubscriptionCountThreshold, eventTransactedSessionCountThreshold, eventTransactionCountThreshold, exportSubscriptionsEnabled, failureReason, jndiEnabled, loginRxMsgCount, loginTxMsgCount, maxConnectionCount, maxEffectiveEndpointCount, maxEffectiveRxFlowCount, maxEffectiveSubscriptionCount, maxEffectiveTransactedSessionCount, maxEffectiveTransactionCount, maxEffectiveTxFlowCount, maxEgressFlowCount, maxEndpointCount, maxIngressFlowCount, maxMsgSpoolUsage, maxSubscriptionCount, maxTransactedSessionCount, maxTransactionCount, mqttRetainMaxMemory, msgReplayActiveCount, msgReplayFailedCount, msgReplayInitializingCount, msgReplayPendingCompleteCount, msgSpoolMsgCount, msgSpoolRxMsgCount, msgSpoolTxMsgCount, msgSpoolUsage, msgVpnName, preferIpVersion, rate, replicationAckPropagationIntervalMsgCount, replicationActiveAckPropTxMsgCount, replicationActiveAsyncQueuedMsgCount, replicationActiveLocallyConsumedMsgCount, replicationActiveMateFlowCongestedPeakTime, replicationActiveMateFlowNotCongestedPeakTime, replicationActivePromotedQueuedMsgCount, replicationActiveReconcileRequestRxMsgCount, replicationActiveSyncEligiblePeakTime, replicationActiveSyncIneligiblePeakTime, replicationActiveSyncQueuedAsAsyncMsgCount, replicationActiveSyncQueuedMsgCount, replicationActiveTransitionToSyncIneligibleCount, replicationBridgeAuthenticationBasicClientUsername, replicationBridgeAuthenticationScheme, replicationBridgeBoundToQueue, replicationBridgeCompressedDataEnabled, replicationBridgeEgressFlowWindowSize, replicationBridgeName, replicationBridgeRetryDelay, replicationBridgeTlsEnabled, replicationBridgeUnidirectionalClientProfileName, replicationBridgeUp, replicationEnabled, replicationQueueBound, replicationQueueMaxMsgSpoolUsage, replicationQueueRejectMsgToSenderOnDiscardEnabled, replicationRejectMsgWhenSyncIneligibleEnabled, replicationRemoteBridgeName, replicationRemoteBridgeUp, replicationRole, replicationStandbyAckPropOutOfSeqRxMsgCount, replicationStandbyAckPropRxMsgCount, replicationStandbyReconcileRequestTxMsgCount, replicationStandbyRxMsgCount, replicationStandbyTransactionRequestCount, replicationStandbyTransactionRequestFailureCount, replicationStandbyTransactionRequestSuccessCount, replicationSyncEligible, replicationTransactionMode, restTlsServerCertEnforceTrustedCommonNameEnabled, restTlsServerCertMaxChainDepth, restTlsServerCertValidateDateEnabled, rxByteCount, rxByteRate, rxCompressedByteCount, rxCompressedByteRate, rxCompressionRatio, rxMsgCount, rxMsgRate, rxUncompressedByteCount, rxUncompressedByteRate, sempOverMsgBusAdminClientEnabled, sempOverMsgBusAdminDistributedCacheEnabled, sempOverMsgBusAdminEnabled, sempOverMsgBusEnabled, sempOverMsgBusLegacyShowClearEnabled, sempOverMsgBusShowEnabled, serviceAmqpMaxConnectionCount, serviceAmqpPlainTextCompressed, serviceAmqpPlainTextEnabled, serviceAmqpPlainTextFailureReason, serviceAmqpPlainTextListenPort, serviceAmqpPlainTextUp, serviceAmqpTlsCompressed, serviceAmqpTlsEnabled, serviceAmqpTlsFailureReason, serviceAmqpTlsListenPort, serviceAmqpTlsUp, serviceMqttMaxConnectionCount, serviceMqttPlainTextCompressed, serviceMqttPlainTextEnabled, serviceMqttPlainTextFailureReason, serviceMqttPlainTextListenPort, serviceMqttPlainTextUp, serviceMqttTlsCompressed, serviceMqttTlsEnabled, serviceMqttTlsFailureReason, serviceMqttTlsListenPort, serviceMqttTlsUp, serviceMqttTlsWebSocketCompressed, serviceMqttTlsWebSocketEnabled, serviceMqttTlsWebSocketFailureReason, serviceMqttTlsWebSocketListenPort, serviceMqttTlsWebSocketUp, serviceMqttWebSocketCompressed, serviceMqttWebSocketEnabled, serviceMqttWebSocketFailureReason, serviceMqttWebSocketListenPort, serviceMqttWebSocketUp, serviceRestIncomingMaxConnectionCount, serviceRestIncomingPlainTextCompressed, serviceRestIncomingPlainTextEnabled, serviceRestIncomingPlainTextFailureReason, serviceRestIncomingPlainTextListenPort, serviceRestIncomingPlainTextUp, serviceRestIncomingTlsCompressed, serviceRestIncomingTlsEnabled, serviceRestIncomingTlsFailureReason, serviceRestIncomingTlsListenPort, serviceRestIncomingTlsUp, serviceRestMode, serviceRestOutgoingMaxConnectionCount, serviceSmfMaxConnectionCount, serviceSmfPlainTextEnabled, serviceSmfPlainTextFailureReason, serviceSmfPlainTextUp, serviceSmfTlsEnabled, serviceSmfTlsFailureReason, serviceSmfTlsUp, serviceWebMaxConnectionCount, serviceWebPlainTextEnabled, serviceWebPlainTextFailureReason, serviceWebPlainTextUp, serviceWebTlsEnabled, serviceWebTlsFailureReason, serviceWebTlsUp, state, subscriptionExportProgress, systemManager, tlsAllowDowngradeToPlainTextEnabled, tlsAverageRxByteRate, tlsAverageTxByteRate, tlsRxByteCount, tlsRxByteRate, tlsTxByteCount, tlsTxByteRate, txByteCount, txByteRate, txCompressedByteCount, txCompressedByteRate, txCompressionRatio, txMsgCount, txMsgRate, txUncompressedByteCount, txUncompressedByteRate);
+    return Objects.hash(alias, authenticationBasicEnabled, authenticationBasicProfileName, authenticationBasicRadiusDomain, authenticationBasicType, authenticationClientCertAllowApiProvidedUsernameEnabled, authenticationClientCertEnabled, authenticationClientCertMaxChainDepth, authenticationClientCertRevocationCheckMode, authenticationClientCertUsernameSource, authenticationClientCertValidateDateEnabled, authenticationKerberosAllowApiProvidedUsernameEnabled, authenticationKerberosEnabled, authenticationOauthDefaultProviderName, authenticationOauthEnabled, authorizationLdapGroupMembershipAttributeName, authorizationLdapTrimClientUsernameDomainEnabled, authorizationProfileName, authorizationType, averageRxByteRate, averageRxCompressedByteRate, averageRxMsgRate, averageRxUncompressedByteRate, averageTxByteRate, averageTxCompressedByteRate, averageTxMsgRate, averageTxUncompressedByteRate, bridgingTlsServerCertEnforceTrustedCommonNameEnabled, bridgingTlsServerCertMaxChainDepth, bridgingTlsServerCertValidateDateEnabled, configSyncLocalKey, configSyncLocalLastResult, configSyncLocalRole, configSyncLocalState, configSyncLocalTimeInState, controlRxByteCount, controlRxMsgCount, controlTxByteCount, controlTxMsgCount, counter, dataRxByteCount, dataRxMsgCount, dataTxByteCount, dataTxMsgCount, discardedRxMsgCount, discardedTxMsgCount, distributedCacheManagementEnabled, dmrEnabled, enabled, eventConnectionCountThreshold, eventEgressFlowCountThreshold, eventEgressMsgRateThreshold, eventEndpointCountThreshold, eventIngressFlowCountThreshold, eventIngressMsgRateThreshold, eventLargeMsgThreshold, eventLogTag, eventMsgSpoolUsageThreshold, eventPublishClientEnabled, eventPublishMsgVpnEnabled, eventPublishSubscriptionMode, eventPublishTopicFormatMqttEnabled, eventPublishTopicFormatSmfEnabled, eventServiceAmqpConnectionCountThreshold, eventServiceMqttConnectionCountThreshold, eventServiceRestIncomingConnectionCountThreshold, eventServiceSmfConnectionCountThreshold, eventServiceWebConnectionCountThreshold, eventSubscriptionCountThreshold, eventTransactedSessionCountThreshold, eventTransactionCountThreshold, exportSubscriptionsEnabled, failureReason, jndiEnabled, loginRxMsgCount, loginTxMsgCount, maxConnectionCount, maxEffectiveEndpointCount, maxEffectiveRxFlowCount, maxEffectiveSubscriptionCount, maxEffectiveTransactedSessionCount, maxEffectiveTransactionCount, maxEffectiveTxFlowCount, maxEgressFlowCount, maxEndpointCount, maxIngressFlowCount, maxMsgSpoolUsage, maxSubscriptionCount, maxTransactedSessionCount, maxTransactionCount, mqttRetainMaxMemory, msgReplayActiveCount, msgReplayFailedCount, msgReplayInitializingCount, msgReplayPendingCompleteCount, msgSpoolMsgCount, msgSpoolRxMsgCount, msgSpoolTxMsgCount, msgSpoolUsage, msgVpnName, rate, replicationAckPropagationIntervalMsgCount, replicationActiveAckPropTxMsgCount, replicationActiveAsyncQueuedMsgCount, replicationActiveLocallyConsumedMsgCount, replicationActiveMateFlowCongestedPeakTime, replicationActiveMateFlowNotCongestedPeakTime, replicationActivePromotedQueuedMsgCount, replicationActiveReconcileRequestRxMsgCount, replicationActiveSyncEligiblePeakTime, replicationActiveSyncIneligiblePeakTime, replicationActiveSyncQueuedAsAsyncMsgCount, replicationActiveSyncQueuedMsgCount, replicationActiveTransitionToSyncIneligibleCount, replicationBridgeAuthenticationBasicClientUsername, replicationBridgeAuthenticationScheme, replicationBridgeBoundToQueue, replicationBridgeCompressedDataEnabled, replicationBridgeEgressFlowWindowSize, replicationBridgeName, replicationBridgeRetryDelay, replicationBridgeTlsEnabled, replicationBridgeUnidirectionalClientProfileName, replicationBridgeUp, replicationEnabled, replicationQueueBound, replicationQueueMaxMsgSpoolUsage, replicationQueueRejectMsgToSenderOnDiscardEnabled, replicationRejectMsgWhenSyncIneligibleEnabled, replicationRemoteBridgeName, replicationRemoteBridgeUp, replicationRole, replicationStandbyAckPropOutOfSeqRxMsgCount, replicationStandbyAckPropRxMsgCount, replicationStandbyReconcileRequestTxMsgCount, replicationStandbyRxMsgCount, replicationStandbyTransactionRequestCount, replicationStandbyTransactionRequestFailureCount, replicationStandbyTransactionRequestSuccessCount, replicationSyncEligible, replicationTransactionMode, restTlsServerCertEnforceTrustedCommonNameEnabled, restTlsServerCertMaxChainDepth, restTlsServerCertValidateDateEnabled, restTlsServerCertValidateNameEnabled, rxByteCount, rxByteRate, rxCompressedByteCount, rxCompressedByteRate, rxCompressionRatio, rxMsgCount, rxMsgRate, rxUncompressedByteCount, rxUncompressedByteRate, sempOverMsgBusAdminClientEnabled, sempOverMsgBusAdminDistributedCacheEnabled, sempOverMsgBusAdminEnabled, sempOverMsgBusEnabled, sempOverMsgBusShowEnabled, serviceAmqpMaxConnectionCount, serviceAmqpPlainTextCompressed, serviceAmqpPlainTextEnabled, serviceAmqpPlainTextFailureReason, serviceAmqpPlainTextListenPort, serviceAmqpPlainTextUp, serviceAmqpTlsCompressed, serviceAmqpTlsEnabled, serviceAmqpTlsFailureReason, serviceAmqpTlsListenPort, serviceAmqpTlsUp, serviceMqttMaxConnectionCount, serviceMqttPlainTextCompressed, serviceMqttPlainTextEnabled, serviceMqttPlainTextFailureReason, serviceMqttPlainTextListenPort, serviceMqttPlainTextUp, serviceMqttTlsCompressed, serviceMqttTlsEnabled, serviceMqttTlsFailureReason, serviceMqttTlsListenPort, serviceMqttTlsUp, serviceMqttTlsWebSocketCompressed, serviceMqttTlsWebSocketEnabled, serviceMqttTlsWebSocketFailureReason, serviceMqttTlsWebSocketListenPort, serviceMqttTlsWebSocketUp, serviceMqttWebSocketCompressed, serviceMqttWebSocketEnabled, serviceMqttWebSocketFailureReason, serviceMqttWebSocketListenPort, serviceMqttWebSocketUp, serviceRestIncomingMaxConnectionCount, serviceRestIncomingPlainTextCompressed, serviceRestIncomingPlainTextEnabled, serviceRestIncomingPlainTextFailureReason, serviceRestIncomingPlainTextListenPort, serviceRestIncomingPlainTextUp, serviceRestIncomingTlsCompressed, serviceRestIncomingTlsEnabled, serviceRestIncomingTlsFailureReason, serviceRestIncomingTlsListenPort, serviceRestIncomingTlsUp, serviceRestMode, serviceRestOutgoingMaxConnectionCount, serviceSmfMaxConnectionCount, serviceSmfPlainTextEnabled, serviceSmfPlainTextFailureReason, serviceSmfPlainTextUp, serviceSmfTlsEnabled, serviceSmfTlsFailureReason, serviceSmfTlsUp, serviceWebMaxConnectionCount, serviceWebPlainTextEnabled, serviceWebPlainTextFailureReason, serviceWebPlainTextUp, serviceWebTlsEnabled, serviceWebTlsFailureReason, serviceWebTlsUp, state, subscriptionExportProgress, systemManager, tlsAllowDowngradeToPlainTextEnabled, tlsAverageRxByteRate, tlsAverageTxByteRate, tlsRxByteCount, tlsRxByteRate, tlsTxByteCount, tlsTxByteRate, txByteCount, txByteRate, txCompressedByteCount, txCompressedByteRate, txCompressionRatio, txMsgCount, txMsgRate, txUncompressedByteCount, txUncompressedByteRate);
   }
 
 
@@ -5874,7 +5743,6 @@ public class MsgVpn {
     sb.append("    msgSpoolTxMsgCount: ").append(toIndentedString(msgSpoolTxMsgCount)).append("\n");
     sb.append("    msgSpoolUsage: ").append(toIndentedString(msgSpoolUsage)).append("\n");
     sb.append("    msgVpnName: ").append(toIndentedString(msgVpnName)).append("\n");
-    sb.append("    preferIpVersion: ").append(toIndentedString(preferIpVersion)).append("\n");
     sb.append("    rate: ").append(toIndentedString(rate)).append("\n");
     sb.append("    replicationAckPropagationIntervalMsgCount: ").append(toIndentedString(replicationAckPropagationIntervalMsgCount)).append("\n");
     sb.append("    replicationActiveAckPropTxMsgCount: ").append(toIndentedString(replicationActiveAckPropTxMsgCount)).append("\n");
@@ -5919,6 +5787,7 @@ public class MsgVpn {
     sb.append("    restTlsServerCertEnforceTrustedCommonNameEnabled: ").append(toIndentedString(restTlsServerCertEnforceTrustedCommonNameEnabled)).append("\n");
     sb.append("    restTlsServerCertMaxChainDepth: ").append(toIndentedString(restTlsServerCertMaxChainDepth)).append("\n");
     sb.append("    restTlsServerCertValidateDateEnabled: ").append(toIndentedString(restTlsServerCertValidateDateEnabled)).append("\n");
+    sb.append("    restTlsServerCertValidateNameEnabled: ").append(toIndentedString(restTlsServerCertValidateNameEnabled)).append("\n");
     sb.append("    rxByteCount: ").append(toIndentedString(rxByteCount)).append("\n");
     sb.append("    rxByteRate: ").append(toIndentedString(rxByteRate)).append("\n");
     sb.append("    rxCompressedByteCount: ").append(toIndentedString(rxCompressedByteCount)).append("\n");
@@ -5932,7 +5801,6 @@ public class MsgVpn {
     sb.append("    sempOverMsgBusAdminDistributedCacheEnabled: ").append(toIndentedString(sempOverMsgBusAdminDistributedCacheEnabled)).append("\n");
     sb.append("    sempOverMsgBusAdminEnabled: ").append(toIndentedString(sempOverMsgBusAdminEnabled)).append("\n");
     sb.append("    sempOverMsgBusEnabled: ").append(toIndentedString(sempOverMsgBusEnabled)).append("\n");
-    sb.append("    sempOverMsgBusLegacyShowClearEnabled: ").append(toIndentedString(sempOverMsgBusLegacyShowClearEnabled)).append("\n");
     sb.append("    sempOverMsgBusShowEnabled: ").append(toIndentedString(sempOverMsgBusShowEnabled)).append("\n");
     sb.append("    serviceAmqpMaxConnectionCount: ").append(toIndentedString(serviceAmqpMaxConnectionCount)).append("\n");
     sb.append("    serviceAmqpPlainTextCompressed: ").append(toIndentedString(serviceAmqpPlainTextCompressed)).append("\n");
@@ -6028,4 +5896,3 @@ public class MsgVpn {
   }
 
 }
-

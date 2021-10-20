@@ -7,7 +7,7 @@ import java.util.Objects;
 
 import com.google.gson.annotations.SerializedName;
 
-import io.swagger.annotations.ApiModelProperty;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
  * Class to encapsulate ApiToken Response.
@@ -20,7 +20,7 @@ public class ApiTokenResponse
 	String token;
 	
 
-	@ApiModelProperty(value = "")
+	@Schema(name = "")
 	public String getToken()
 	{
 		return token;
