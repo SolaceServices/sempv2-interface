@@ -42,13 +42,3 @@ To build *action* packages with the code generator cli, copy the JSON schemas on
 
 Repeat the same steps for *config* and *monitor* schemas.
   
-### Building the library:
-To build solution use the folowing command:
- ```bash
- mvn clean compile package -DskipTests
- ```
- 
-To skip tests add the follwoing parameter to the build command:
- ```bash
- mvn clean compile package -DskipTests
- ```
