@@ -12,6 +12,8 @@ public class ServiceManagementContext
 	private String userUsername;
 	private String userPassword;
 	private String sempUrl;
+	private String sempMonitorUrl;
+	private String sempActionUrl;
 	private String sempV1Url;
 	private String smfUrl;
 	private String ssmfUrl;
@@ -45,6 +47,24 @@ public class ServiceManagementContext
 		return SECURE_SMF_PREFIX + ssmfUrl;
 	}
 	
+	/**
+	 * Gets the monitor Url.
+	 * @return
+	 */
+	public String getSempMonitorUrl() 
+	{
+		return sempMonitorUrl;
+	}
+
+	/**
+	 * Gets the action Url.
+	 * @return
+	 */
+	public String getSempActionUrl() 
+	{
+		return sempActionUrl;
+	}
+
 	private String clusterPassword;
 	private String clusterName;
 	
@@ -182,9 +202,11 @@ public class ServiceManagementContext
 				{
 					if ((ep.getName().equalsIgnoreCase("SEMP Config")) || (ep.getName().equalsIgnoreCase("Secured SEMP Config")))
 					{
-							sempV1Url = sempUrl = ep.getUris().get(0);
+							sempV1Url = sempMonitorUrl = sempUrl = ep.getUris().get(0);
 							if (sempUrl.endsWith("/v2/config"))
 							{
+								sempMonitorUrl = sempUrl.replace("/v2/config", "/v2/monitor");
+								sempActionUrl = sempUrl.replace("/v2/config", "/v2/action");
 								sempV1Url = sempUrl.substring(0, sempUrl.indexOf("/v2/config"));
 							}
 					}
