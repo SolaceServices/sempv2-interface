@@ -17,7 +17,7 @@ import com.solace.psg.sempv2.admin.model.ServiceType;
 
 /**
  * Class to hold common test data.
- * @author VictorTsonkov
+ * 
  *
  */
 public abstract class CommonTestBase

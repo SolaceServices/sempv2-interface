@@ -6,7 +6,7 @@ package com.solace.psg.sempv2.auth;
 /**
  * Enumerates different authentication Types supported by the ApiClient 
  * 
- * @author VictorTsonkov
+ * 
  *
  */
 public enum AuthenticationType

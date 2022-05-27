@@ -1,16 +1,16 @@
 # sempv2-interface
 
 ## Description
-Project sempv2-interface is Java library project for SEMP V2 management.
+Project sempv2-interface is Java library project for handling SEMP V2 operations and management of the PubSub+ cloud services, as well as managing some of the Solace Cloud tasks.  
 
 The project uses packages with generated code via https://editor.swagger.io/ 
 
-The currently generated code is based on schema version 9.6 (2.16). The latest version is 9.8 (2.18). 
+The currently generated code is based on schema version 9.6 (2.16).  
 
 The code is grouped into four main packages:
 
 - action - Mostly coming from generated OpenAPI schemas and handling SEMP v2 Actions operations.
-- admin - Created manually to handle Solace Cloud administrative operations, which are specific for Solace PubSub+ Cloud. 
+- admin - Created manually to handle Solace Cloud administrative operations, which are specific for Solace PubSub+ Cloud. This package was manually created, as these tasks weren't part of provided OpenAPI schemas.
 - config - Mostly coming from generated OpenAPI schemas and handling SEMP v2 Config operations.
 - monitor - Mostly coming from generated OpenAPI schemas and handling SEMP v2 Monitor operations.
 
@@ -45,7 +45,7 @@ Repeat the same steps for *config* and *monitor* schemas.
 ### Building the library:
 To build solution use the folowing command:
  ```bash
- mvn clean compile package -DskipTests
+ mvn clean compile package 
  ```
  
 To skip tests add the follwoing parameter to the build command:

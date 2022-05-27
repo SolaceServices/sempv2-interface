@@ -59,7 +59,7 @@ import com.squareup.okhttp.Response;
 /**
  * Service API for Solace PubSub Cloud console.
  * 
- * @author VictorTsonkov
+ * 
  *
  */
 public class PubSubCloudConsoleApi

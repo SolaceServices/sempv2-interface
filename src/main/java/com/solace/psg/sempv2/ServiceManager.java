@@ -37,7 +37,7 @@ import com.solace.psg.sempv2.config.model.MsgVpnClientProfile;
 /**
  * Class to handle various service operations.
  *  
- * @author VictorTsonkov
+ * 
  *
  */
 public class ServiceManager
@@ -104,7 +104,17 @@ public class ServiceManager
 
 	private int readTimeout = 120000;
 	
-	private String rootAdminUrl = "https://api.solace.cloud/api/v0";
+	/*
+  	United States: https://api.solace.cloud/
+	 */
+	public static String CLOUD_API_URL = "https://api.solace.cloud/api/v0";
+	
+	/*	
+	Australia: http://api.solacecloud.com.au/
+	 */
+	public static String CLOUD_API_AUS_URL = "http://api.solacecloud.com.au/api/v0";
+	
+	private String rootAdminUrl = CLOUD_API_URL;
 
 	private String tokenAdminUrl = rootAdminUrl + "/iam/tokens";
 	
@@ -203,10 +213,24 @@ public class ServiceManager
 	}
 
 	/**
-	 * Initialises a new instance of the class.  
+	 * Default constructor shouldn't be used.  
 	 */
 	private ServiceManager()
 	{
+		init();
+	}
+	
+	/**
+	 * Initialises a new class with a given list of services.  
+	 * @throws ApiException 
+	 */
+	public ServiceManager(String accessToken, boolean isAustralianCloud) throws ApiException
+	{
+		if (accessToken == null)
+			throw new NullPointerException("Parameter accessToken cannot be null.");
+		
+		this.rootAdminUrl = CLOUD_API_AUS_URL;
+		this.accessToken = accessToken;
 		init();
 	}
 	

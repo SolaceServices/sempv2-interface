@@ -13,7 +13,7 @@ import com.solace.psg.sempv2.apiclient.Pair;
 /**
  * BearerToken authentication type implementation.
  * 
- * @author VictorTsonkov
+ * 
  *
  */
 public class BearerTokenAuth implements Authentication
